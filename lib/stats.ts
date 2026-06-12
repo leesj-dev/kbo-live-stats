@@ -31,6 +31,18 @@ export type ChartPayload = {
   updatedAt: string; // ISO timestamp
 };
 
+export function emptyChartPayload(season: number): ChartPayload {
+  return {
+    season,
+    teams: [],
+    dates: [],
+    maxGames: 0,
+    byGame: {},
+    byDate: {},
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function compareRows(a: StatRow, b: StatRow): number {
   if (a.gameDate !== b.gameDate) return a.gameDate < b.gameDate ? -1 : 1;
   // Deterministic intra-day order (doubleheaders) via gameId suffix.

@@ -10,25 +10,19 @@ config({ path: ".env.local" });
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fetchGames } from "../lib/scraper";
-import { REGULAR_SEASON_START_DATES } from "../lib/seasons";
-
-function todayKstYmd(): string {
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  return `${kst.getUTCFullYear()}${String(kst.getUTCMonth() + 1).padStart(2, "0")}${String(kst.getUTCDate()).padStart(2, "0")}`;
-}
+import { seasonCrawlRange } from "../lib/seasons";
 
 async function main() {
   const season = Number(process.argv[2]);
-  const start = REGULAR_SEASON_START_DATES[season];
-  if (!start) {
-    console.error(`Unknown season: ${process.argv[2]}`);
+  const range = seasonCrawlRange(season);
+  if (!range) {
+    console.error(`Unknown or not-yet-started season: ${process.argv[2]}`);
     process.exit(1);
   }
-  const today = todayKstYmd();
-  const end = season < Number(today.slice(0, 4)) ? `${season}1231` : today;
+  const { fromYmd, toYmd } = range;
 
-  process.stdout.write(`→ ${season}: fetching ${start}–${end} ... `);
-  const rows = await fetchGames(season, start, end);
+  process.stdout.write(`→ ${season}: fetching ${fromYmd}–${toYmd} ... `);
+  const rows = await fetchGames(season, fromYmd, toYmd);
   const dir = path.join(process.cwd(), "data");
   await mkdir(dir, { recursive: true });
   const file = path.join(dir, `${season}.json`);

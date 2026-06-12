@@ -11,31 +11,18 @@ config({ path: ".env.local" });
 
 import { fetchGames } from "../lib/scraper";
 import { upsertResults } from "../lib/data";
-import { REGULAR_SEASON_START_DATES, SEASONS } from "../lib/seasons";
-
-function todayKstYmd(): string {
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  const y = kst.getUTCFullYear();
-  const m = String(kst.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(kst.getUTCDate()).padStart(2, "0");
-  return `${y}${m}${d}`;
-}
+import { SEASONS, seasonCrawlRange } from "../lib/seasons";
 
 async function seedSeason(season: number) {
-  const start = REGULAR_SEASON_START_DATES[season];
-  if (!start) {
-    console.log(`× ${season}: no start date defined, skipping`);
+  const range = seasonCrawlRange(season);
+  if (!range) {
+    console.log(`· ${season}: unknown season or not started yet, skipping`);
     return;
   }
-  const today = todayKstYmd();
-  const end = season < Number(today.slice(0, 4)) ? `${season}1231` : today;
-  if (end < start) {
-    console.log(`· ${season}: season has not started yet, skipping`);
-    return;
-  }
+  const { fromYmd, toYmd } = range;
 
-  process.stdout.write(`→ ${season}: fetching ${start}–${end} ... `);
-  const rows = await fetchGames(season, start, end);
+  process.stdout.write(`→ ${season}: fetching ${fromYmd}–${toYmd} ... `);
+  const rows = await fetchGames(season, fromYmd, toYmd);
   const inserted = await upsertResults(rows);
   console.log(`${rows.length} results, ${inserted} new`);
 }

@@ -11,30 +11,20 @@ config({ path: ".env.local" });
 
 import { fetchWinProbabilities } from "../lib/scraper";
 import { upsertWinProb } from "../lib/data";
-import { REGULAR_SEASON_START_DATES, SEASONS } from "../lib/seasons";
-
-function todayKstYmd(): string {
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  return `${kst.getUTCFullYear()}${String(kst.getUTCMonth() + 1).padStart(2, "0")}${String(kst.getUTCDate()).padStart(2, "0")}`;
-}
+import { SEASONS, seasonCrawlRange } from "../lib/seasons";
 
 async function seedSeason(season: number) {
-  const start = REGULAR_SEASON_START_DATES[season];
-  if (!start) {
-    console.log(`× ${season}: no start date defined, skipping`);
+  const range = seasonCrawlRange(season);
+  if (!range) {
+    console.log(`· ${season}: unknown season or not started yet, skipping`);
     return;
   }
-  const today = todayKstYmd();
-  const end = season < Number(today.slice(0, 4)) ? `${season}1231` : today;
-  if (end < start) {
-    console.log(`· ${season}: season has not started yet, skipping`);
-    return;
-  }
+  const { fromYmd, toYmd } = range;
 
   let hits = 0;
   let misses = 0;
-  process.stdout.write(`→ ${season}: crawling win prob ${start}–${end} ... `);
-  const rows = await fetchWinProbabilities(season, start, end, {
+  process.stdout.write(`→ ${season}: crawling win prob ${fromYmd}–${toYmd} ... `);
+  const rows = await fetchWinProbabilities(season, fromYmd, toYmd, {
     onHit: () => hits++,
     onMiss: () => misses++,
   });

@@ -3,7 +3,7 @@
  * egress to api-gw.sports.naver.com is allowed. It picks a recent finished game
  * (or one you pass) and reports, per candidate endpoint, the HTTP status, byte
  * size, whether our extractor found a series, and a short JSON preview — so you
- * can confirm the real endpoint/shape and adjust lib/winprob-scraper.ts.
+ * can confirm the real endpoint/shape and adjust lib/scraper.ts.
  *
  *   npm run probe:winprob                       # auto-pick a recent game
  *   npm run probe:winprob -- 20250405LTSS02025  # a specific Naver gameId

@@ -63,6 +63,24 @@ export type CandlePayload = {
   updatedAt: string; // ISO timestamp
 };
 
+// A close near 100% is a win and near 0% a loss; anything in between is a
+// draw (or, for combined doubleheader candles, an aggregate).
+export type Outcome = "w" | "l" | "d";
+export const candleOutcome = (wpClose: number): Outcome =>
+  wpClose >= 99 ? "w" : wpClose <= 1 ? "l" : "d";
+
+export function emptyCandlePayload(season: number): CandlePayload {
+  return {
+    season,
+    teams: [],
+    dates: [],
+    maxGames: 0,
+    byGame: {},
+    byDate: {},
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function compareRows(a: WinProbRow, b: WinProbRow): number {
   if (a.gameDate !== b.gameDate) return a.gameDate < b.gameDate ? -1 : 1;
   return a.gameId < b.gameId ? -1 : a.gameId > b.gameId ? 1 : 0;
@@ -84,12 +102,11 @@ function toCandle(row: WinProbRow, game: number): Candle {
   };
 }
 
-// `rankedTeams` (optional) fixes candle ordering to match the line chart's
-// standings; teams without win-prob data are dropped from the payload.
+// Teams are listed alphabetically here; lib/data.ts reorders them to match the
+// line chart's standings when serving the payload.
 export function buildCandlePayload(
   season: number,
   rows: WinProbRow[],
-  rankedTeams?: string[],
   updatedAt: Date = new Date(),
 ): CandlePayload {
   const byTeamRows = new Map<string, WinProbRow[]>();
@@ -123,37 +140,28 @@ export function buildCandlePayload(
       if (group.length === 1) {
         ofDate.set(date, group[0]);
       } else {
-        // combine for doubleheader
+        // Doubleheader: chain each game's excursion onto the previous close so
+        // the combined candle spans the whole day.
         const first = group[0];
         const last = group[group.length - 1];
-        
-        let currentWp = first.wpOpen;
-        let maxWp = currentWp;
-        let minWp = currentWp;
 
+        let close = first.wpOpen;
+        let high = close;
+        let low = close;
         for (const g of group) {
-          const hD = g.wpHigh - g.wpOpen;
-          const lD = g.wpLow - g.wpOpen;
-          const cD = g.wpClose - g.wpOpen;
-          
-          maxWp = Math.max(maxWp, currentWp + hD);
-          minWp = Math.min(minWp, currentWp + lD);
-          currentWp += cD;
+          high = Math.max(high, close + (g.wpHigh - g.wpOpen));
+          low = Math.min(low, close + (g.wpLow - g.wpOpen));
+          close += g.wpClose - g.wpOpen;
         }
-        
-        const wpOpen = first.wpOpen;
-        const wpHigh = maxWp;
-        const wpLow = minWp;
-        const wpClose = currentWp;
-        
+
         ofDate.set(date, {
           game: last.game,
           date: first.date,
-          bullish: wpClose >= wpOpen,
-          wpOpen,
-          wpHigh,
-          wpLow,
-          wpClose,
+          bullish: close >= first.wpOpen,
+          wpOpen: first.wpOpen,
+          wpHigh: high,
+          wpLow: low,
+          wpClose: close,
           series: [], // Sparklines are drawn per subGame in the tooltip instead
           innings: [],
           subGames: group,
@@ -173,10 +181,7 @@ export function buildCandlePayload(
     byDate[team] = dates.map((d) => ofDate.get(d) ?? null);
   }
 
-  const present = new Set(byTeamRows.keys());
-  const teams = (rankedTeams ?? [...present].sort()).filter((t) =>
-    present.has(t),
-  );
+  const teams = [...byTeamRows.keys()].sort();
 
   return {
     season,

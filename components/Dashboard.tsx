@@ -1,172 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChartPayload } from "@/lib/stats";
 import type { CandlePayload } from "@/lib/candles";
 import { TEAM_COLORS } from "@/lib/teams";
-import { MarginChart, chartGeometry, type XAxis, type YAxis } from "./MarginChart";
-import { DetailChart } from "./DetailChart";
+import { chartGeometry, fmtMonthDay, fmtRate, fmtSigned, NEGATIVE_COLOR, NEUTRAL_COLOR, POSITIVE_COLOR, type XAxis, type YAxis } from "@/lib/chart";
+import { MarginChart } from "./charts/MarginChart";
+import { DetailChart } from "./charts/DetailChart";
 import { RangeSlider } from "./RangeSlider";
+import { Segmented } from "./Segmented";
+import { SeasonDropdown } from "./SeasonDropdown";
+import { InfoTooltip } from "./InfoTooltip";
 
 type ChartKind = "basic" | "detailed";
 
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-  label,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-  label: string;
-}) {
-  return (
-    <div className="flex flex-col gap-[5px]">
-      <span className="font-mono text-[12px] uppercase tracking-wider text-[var(--color-muted)] ml-1">{label}</span>
-      <div className="inline-flex rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-0.5">
-        {options.map((o) => {
-          const active = o.value === value;
-          return (
-            <button
-              key={o.value}
-              onClick={() => onChange(o.value)}
-              className={`relative rounded-[6px] px-3 sm:px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
-                active
-                  ? "bg-[var(--color-panel-2)] text-[var(--color-fg)] shadow-[inset_0_0_0_1px_var(--color-line-strong)]"
-                  : "text-[var(--color-muted)] hover:text-[var(--color-fg)]"
-              }`}
-            >
-              {o.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+// The detailed (win-probability) chart relies on per-pitch WP data, only
+// available from the 2024 season onward.
+const DETAIL_MIN_SEASON = 2024;
 
-function SeasonDropdown({
-  seasons,
-  current,
-  chartKind,
-  xAxis,
-  yAxis,
-}: {
-  seasons: number[];
-  current: number;
-  chartKind: string;
-  xAxis: string;
-  yAxis: string;
-}) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  // Prefetch sibling seasons so navigation feels instant.
-  useEffect(() => {
-    if (open) {
-      seasons.forEach((s) => {
-        router.prefetch(`/${s}?kind=${chartKind}&x=${xAxis}&y=${yAxis}`);
-      });
-    }
-  }, [open, seasons, router, chartKind, xAxis, yAxis]);
-
-  return (
-    <div
-      ref={ref}
-      className="relative"
-    >
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className="flex items-center gap-2.5 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] py-2 pl-3.5 pr-3 transition-colors hover:border-[var(--color-line-strong)]"
-      >
-        <span className="font-bold text-xl leading-none text-[var(--color-fg)]">{current}</span>
-        <span className="text-[12px] uppercase tracking-[0.1em] text-[var(--color-faint)]">시즌</span>
-        <svg
-          width="11"
-          height="11"
-          viewBox="0 0 12 12"
-          fill="none"
-          className={`text-[var(--color-muted)] transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-        >
-          <path
-            d="M2.5 4.5L6 8l3.5-3.5"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-
-      {open && (
-        <ul
-          role="listbox"
-          className="scroll-thin absolute right-0 z-30 mt-2 max-h-72 w-32 overflow-y-auto rounded-xl border border-[var(--color-line-strong)] bg-[var(--color-panel-2)] p-1 shadow-2xl shadow-black/50"
-        >
-          {seasons.map((s) => {
-            const active = s === current;
-            return (
-              <li key={s}>
-                <button
-                  role="option"
-                  aria-selected={active}
-                  onClick={() => {
-                    setOpen(false);
-                    if (!active) {
-                      router.push(`/${s}?kind=${chartKind}&x=${xAxis}&y=${yAxis}`);
-                    }
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[13px] tabular-nums transition-colors ${
-                    active
-                      ? "bg-[var(--color-amber)] font-semibold text-[#1a1405]"
-                      : "text-[var(--color-muted)] hover:bg-[var(--color-panel)] hover:text-[var(--color-fg)]"
-                  }`}
-                >
-                  {s}
-                  {active && (
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 12 12"
-                      fill="none"
-                    >
-                      <path
-                        d="M2.5 6.5L5 9l4.5-5"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
+const signColor = (v: number) => (v > 0 ? POSITIVE_COLOR : v < 0 ? NEGATIVE_COLOR : NEUTRAL_COLOR);
 
 export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload; candles: CandlePayload; seasons: number[] }) {
   const [chartKind, setChartKind] = useState<ChartKind>("basic");
@@ -174,16 +26,18 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
   const [yAxis, setYAxis] = useState<YAxis>("margin");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [highlight, setHighlight] = useState<string | null>(null);
-  const isDetailed = chartKind === "detailed";
-  const hasDetailedData = candles.teams.length > 0;
+  const detailSupported = payload.season >= DETAIL_MIN_SEASON;
+  const isDetailed = detailSupported && chartKind === "detailed";
 
+  // Restore view state from the query string (written by SeasonDropdown), then
+  // let the line-draw animation play once and settle.
   const [shouldAnimate, setShouldAnimate] = useState(true);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const kind = params.get("kind");
     const x = params.get("x");
     const y = params.get("y");
-    if (kind === "basic" || kind === "detailed") setChartKind(kind);
+    if (kind === "basic" || (kind === "detailed" && detailSupported)) setChartKind(kind);
     if (x === "date" || x === "game") setXAxis(x);
     if (y === "margin" || y === "winRate") setYAxis(y);
 
@@ -201,16 +55,26 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
     return () => ro.disconnect();
   }, []);
 
-  // The active dataset drives the x-axis bounds and date labels
+  // The active dataset drives the x-axis bounds and date labels.
   const activeDates = isDetailed ? candles.dates : payload.dates;
   const dateMaxIdx = Math.max(0, activeDates.length - 1);
   const gameMax = Math.max(1, isDetailed ? candles.maxGames : payload.maxGames);
   const [dateRange, setDateRange] = useState<[number, number]>([0, dateMaxIdx]);
   const [gameRange, setGameRange] = useState<[number, number]>([1, gameMax]);
+  // A new season is a fresh dataset — reset the zoom to the full extent.
   useEffect(() => {
     setDateRange([0, dateMaxIdx]);
     setGameRange([1, gameMax]);
-  }, [payload.season, chartKind, dateMaxIdx, gameMax]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload.season]);
+  // Toggling 기본/상세 (or 승패마진/승률) keeps the current zoom; only clamp it
+  // when the active dataset's extent shrinks so the range stays in bounds.
+  useEffect(() => {
+    setDateRange(([lo, hi]) => [Math.min(lo, dateMaxIdx), Math.min(hi, dateMaxIdx)]);
+  }, [dateMaxIdx]);
+  useEffect(() => {
+    setGameRange(([lo, hi]) => [Math.min(Math.max(lo, 1), gameMax), Math.min(hi, gameMax)]);
+  }, [gameMax]);
 
   const isGame = xAxis === "game";
   const range = isGame ? gameRange : dateRange;
@@ -220,36 +84,125 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
   const fmtRange = (v: number) => {
     if (isGame) return `${v}경기`;
     const d = activeDates[v] ?? activeDates[activeDates.length - 1];
-    return d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : "—";
+    return d ? fmtMonthDay(d) : "—";
   };
 
   // Sidebar click: toggles a team on/off.
   const onTeamClick = (team: string) => {
     setHidden((prev) => {
       const next = new Set(prev);
-      next.has(team) ? next.delete(team) : next.add(team);
+      if (next.has(team)) {
+        next.delete(team);
+      } else {
+        next.add(team);
+      }
       return next;
     });
   };
 
-  const hasData = payload.teams.length > 0;
+  const hasActiveData = isDetailed ? candles.teams.length > 0 : payload.teams.length > 0;
+  const geo = chartGeometry(width);
 
-  const standings = useMemo(
-    () =>
-      payload.teams.map((team) => {
-        const last = payload.byGame[team]?.at(-1);
-        return {
-          team,
-          margin: last?.margin ?? 0,
-          winRate: last?.winRate ?? 0,
-          games: last?.game ?? 0,
-        };
-      }),
-    [payload],
-  );
+  // Standings reflect the slider's right endpoint (cumulative season-to-date up
+  // to that game/date) using the real records, and are re-sorted by the visible
+  // metric so the rank numbers match the selected point in time.
+  const rangeHi = range[1];
+  const endpointDate = isGame ? null : activeDates[rangeHi];
+  const standings = useMemo(() => {
+    const rows = payload.teams.map((team) => {
+      const games = payload.byGame[team] ?? [];
+      let rec: (typeof games)[number] | undefined;
+      for (const g of games) {
+        if (isGame ? g.game <= rangeHi : !endpointDate || g.date <= endpointDate) rec = g;
+        else break;
+      }
+      return {
+        team,
+        margin: rec?.margin ?? 0,
+        winRate: rec?.winRate ?? 0,
+        games: rec?.game ?? 0,
+      };
+    });
 
-  const updated = new Date(payload.updatedAt);
-  const updatedLabel = `${updated.getFullYear()}-${String(updated.getMonth() + 1).padStart(2, "0")}-${String(updated.getDate()).padStart(2, "0")}`;
+    // 1. Calculate ranks based on winRate (official standings rank)
+    const sortedByWinRate = [...rows].sort((a, b) => {
+      const d = b.winRate - a.winRate;
+      if (d !== 0) return d;
+      const d2 = b.margin - a.margin; // tiebreak on margin
+      if (d2 !== 0) return d2;
+      return a.team.localeCompare(b.team);
+    });
+
+    const rankMap = new Map<string, number>();
+    let currentRank = 1;
+    sortedByWinRate.forEach((row, idx) => {
+      if (idx > 0) {
+        const prev = sortedByWinRate[idx - 1];
+        const isTie = row.winRate === prev.winRate;
+        if (!isTie) {
+          currentRank = idx + 1;
+        }
+      }
+      rankMap.set(row.team, currentRank);
+    });
+
+    // 2. Sort the rows for display according to the active yAxis metric
+    rows.sort((a, b) => {
+      const d = yAxis === "winRate" ? b.winRate - a.winRate : b.margin - a.margin;
+      if (d !== 0) return d;
+      const d2 = b.margin - a.margin; // tiebreak on the other metric
+      if (d2 !== 0) return d2;
+      return a.team.localeCompare(b.team);
+    });
+
+    return rows.map((row) => ({
+      ...row,
+      rank: rankMap.get(row.team) ?? 1,
+    }));
+  }, [payload, isGame, rangeHi, endpointDate, yAxis]);
+
+  // Continuous FLIP: animate rows sliding to their new positions as the order
+  // changes. The key for fast/repeated drags is to read each row's TRUE layout
+  // position without disturbing any in-flight transform (we read the live
+  // translate from the computed matrix and subtract it). That way the offset
+  // can't compound (no off-screen fling) and we never reset `transition`
+  // mid-tween (so the animation keeps playing while dragging) — each new tween
+  // simply continues from wherever the row currently is on screen.
+  const rowRefs = useRef(new Map<string, HTMLLIElement>());
+  const prevTops = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    const rows = rowRefs.current;
+    const liveTranslateY = (el: HTMLElement) => {
+      const t = getComputedStyle(el).transform;
+      return t && t !== "none" ? new DOMMatrixReadOnly(t).m42 : 0;
+    };
+    // Measure first (reads only), so styles flush once.
+    const plan: { el: HTMLLIElement; top: number; from: number | null }[] = [];
+    rows.forEach((el, team) => {
+      const cur = liveTranslateY(el);
+      const top = el.getBoundingClientRect().top - cur; // true layout top
+      const old = prevTops.current.get(team);
+      const dy = old == null ? 0 : old - top;
+      prevTops.current.set(team, top);
+      plan.push({ el, top, from: dy ? dy + cur : null });
+    });
+    // Invert: park each moved row at its current on-screen spot, no transition.
+    for (const p of plan) {
+      if (p.from == null) continue;
+      p.el.style.transition = "none";
+      p.el.style.transform = `translateY(${p.from}px)`;
+    }
+    // Play: next frame, transition back to the natural position.
+    requestAnimationFrame(() => {
+      for (const p of plan) {
+        if (p.from == null) continue;
+        p.el.style.transition = "transform 320ms cubic-bezier(0.4,0,0.2,1)";
+        p.el.style.transform = "";
+      }
+    });
+  }, [standings]);
+
+  const updatedLabel = payload.updatedAt.slice(0, 10);
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8">
@@ -273,11 +226,16 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
       <div className="mt-7 flex flex-wrap items-end gap-x-2 min-[406px]:gap-x-4 min-[438px]:gap-x-8 gap-y-4">
         <Segmented
           label="차트"
-          value={chartKind}
+          value={isDetailed ? "detailed" : "basic"}
           onChange={setChartKind}
+          info={
+            <InfoTooltip label="상세 차트 안내">
+              <b className="font-semibold">상세</b> 차트는 경기 중 승리확률의 흐름까지 반영해서 보여줍니다. 2024 시즌부터 지원합니다.
+            </InfoTooltip>
+          }
           options={[
             { value: "basic", label: "기본" },
-            { value: "detailed", label: "상세" },
+            { value: "detailed", label: "상세", disabled: !detailSupported },
           ]}
         />
         <Segmented
@@ -306,9 +264,9 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
           className="animate-rise rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)]/60 p-3 sm:p-4"
           style={{ animationDelay: "0.08s" }}
         >
-          {isDetailed ? (
-            hasDetailedData ? (
-              <>
+          {hasActiveData ? (
+            <>
+              {isDetailed ? (
                 <DetailChart
                   candles={candles}
                   payload={payload}
@@ -321,46 +279,22 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
                   xRange={range}
                   animate={shouldAnimate}
                 />
-                <div
-                  className="mt-1"
-                  style={{
-                    paddingLeft: chartGeometry(width).M.left,
-                    paddingRight: chartGeometry(width).M.right,
-                  }}
-                >
-                  <RangeSlider
-                    min={sliderMin}
-                    max={sliderMax}
-                    value={range}
-                    onChange={setRange}
-                    format={fmtRange}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="flex h-[360px] flex-col items-center justify-center gap-2 text-center">
-                <span className="text-[var(--color-muted)]">{payload.season} 시즌 데이터가 아직 없습니다.</span>
-              </div>
-            )
-          ) : hasData ? (
-            <>
-              <MarginChart
-                payload={payload}
-                xAxis={xAxis}
-                yAxis={yAxis}
-                hidden={hidden}
-                highlight={highlight}
-                onHighlight={setHighlight}
-                width={width}
-                xRange={range}
-                animate={shouldAnimate}
-              />
+              ) : (
+                <MarginChart
+                  payload={payload}
+                  xAxis={xAxis}
+                  yAxis={yAxis}
+                  hidden={hidden}
+                  highlight={highlight}
+                  onHighlight={setHighlight}
+                  width={width}
+                  xRange={range}
+                  animate={shouldAnimate}
+                />
+              )}
               <div
                 className="mt-1"
-                style={{
-                  paddingLeft: chartGeometry(width).M.left,
-                  paddingRight: chartGeometry(width).M.right,
-                }}
+                style={{ paddingLeft: geo.M.left, paddingRight: geo.M.right }}
               >
                 <RangeSlider
                   min={sliderMin}
@@ -373,7 +307,9 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
             </>
           ) : (
             <div className="flex h-[360px] flex-col items-center justify-center gap-2 text-center">
-              <span className="text-[var(--color-muted)]">{payload.season} 시즌 데이터가 없습니다.</span>
+              <span className="text-[var(--color-muted)]">
+                {payload.season} 시즌 데이터가 {isDetailed ? "아직 " : ""}없습니다.
+              </span>
             </div>
           )}
         </div>
@@ -391,7 +327,13 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
               const off = hidden.has(s.team) || noData;
               const hi = highlight === s.team;
               return (
-                <li key={s.team}>
+                <li
+                  key={s.team}
+                  ref={(el) => {
+                    if (el) rowRefs.current.set(s.team, el);
+                    else rowRefs.current.delete(s.team);
+                  }}
+                >
                   <button
                     onClick={() => onTeamClick(s.team)}
                     onPointerEnter={() => !noData && setHighlight(s.team)}
@@ -401,7 +343,7 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
                       hi ? "bg-[var(--color-panel-2)]" : "hover:bg-[var(--color-panel-2)]/60"
                     } ${off ? "opacity-40" : ""} ${noData ? "cursor-not-allowed" : ""}`}
                   >
-                    <span className="w-4 font-mono text-[12px] font-medium tabular-nums text-[var(--color-muted)]">{i + 1}</span>
+                    <span className="w-4 font-mono text-[12px] font-medium tabular-nums text-[var(--color-muted)]">{s.rank}</span>
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-full"
                       style={{
@@ -412,22 +354,9 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
                     <span className="flex-1 truncate text-[13px] font-medium text-[var(--color-fg)]">{s.team}</span>
                     <span
                       className="font-mono text-[12px] font-semibold tabular-nums"
-                      style={{
-                        color:
-                          yAxis === "winRate"
-                            ? s.winRate > 0.5
-                              ? "#5ad19a"
-                              : s.winRate < 0.5
-                                ? "#f0746e"
-                                : "var(--color-muted)"
-                            : s.margin > 0
-                              ? "#5ad19a"
-                              : s.margin < 0
-                                ? "#f0746e"
-                                : "var(--color-muted)",
-                      }}
+                      style={{ color: signColor(yAxis === "winRate" ? s.winRate - 0.5 : s.margin) }}
                     >
-                      {yAxis === "winRate" ? s.winRate.toFixed(3).replace(/^0/, "") : s.margin > 0 ? `+${s.margin}` : s.margin}
+                      {yAxis === "winRate" ? fmtRate(s.winRate) : fmtSigned(s.margin)}
                     </span>
                   </button>
                 </li>
@@ -444,7 +373,7 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
               href="https://github.com/leesj-dev"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline hover:no-underline"
+              className="no-underline hover:underline"
             >
               leesj-dev
             </a>

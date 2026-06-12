@@ -3,21 +3,10 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { fetchGames, fetchWinProbabilities } from "@/lib/scraper";
 import { upsertResults, upsertWinProb, getExistingWinProbGameIds } from "@/lib/data";
 import { LATEST_SEASON, REGULAR_SEASON_START_DATES } from "@/lib/seasons";
+import { kstYmd } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-// Returns KST date YYYYMMDD with an optional day offset.
-function getKstYmd(offsetDays: number = 0): string {
-  const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000); // shift to KST
-  if (offsetDays !== 0) {
-    kstNow.setUTCDate(kstNow.getUTCDate() + offsetDays);
-  }
-  const y = kstNow.getUTCFullYear();
-  const m = String(kstNow.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(kstNow.getUTCDate()).padStart(2, "0");
-  return `${y}${m}${d}`;
-}
 
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -43,8 +32,8 @@ async function handle(req: Request) {
     toYmd = dateParam;
   } else {
     // Crawl both yesterday and today KST to capture late-night & extra-inning finishes
-    fromYmd = getKstYmd(-1);
-    toYmd = getKstYmd(0);
+    fromYmd = kstYmd(-1);
+    toYmd = kstYmd(0);
   }
 
   const season = seasonParam ? Number(seasonParam) : Number(toYmd.slice(0, 4));

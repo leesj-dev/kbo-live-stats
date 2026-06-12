@@ -1,6 +1,6 @@
 // Shared Naver Sports access layer: realistic browser headers (so requests are
-// not flagged as a bot) and a schedule enumerator used by both the result
-// scraper (lib/scraper.ts) and the win-probability scraper (lib/winprob-scraper.ts).
+// not flagged as a bot) and a schedule enumerator used by both scrapers in
+// lib/scraper.ts (game results and live win probability).
 
 const SCHEDULE_URL = "https://api-gw.sports.naver.com/schedule/games";
 

@@ -1,5 +1,5 @@
 import { and, eq, gte, lte, sql } from "drizzle-orm";
-import { dashed, LATEST_SEASON } from "./seasons";
+import { dashed } from "./dates";
 import { getDb, hasDb } from "./db";
 import { teamGameResults, teamGameWinProb } from "./db/schema";
 import type { GameResultRow } from "./scraper";
@@ -36,29 +36,16 @@ export async function getSeasonRows(season: number): Promise<StatRow[]> {
   }));
 }
 
-async function fetchChartPayload(season: number): Promise<ChartPayload> {
-  const rows = await getSeasonRows(season);
-  return buildChartPayload(season, rows);
-}
-
-const getLatestChartPayload = unstable_cache(
-  async (season: number) => fetchChartPayload(season),
-  ["latest-chart-payload"],
-  { revalidate: false, tags: ["chart-payload"] }
+// Cached per season (the season argument is part of the cache key); the cron
+// route purges via revalidateTag after each scrape.
+export const getChartPayload = unstable_cache(
+  async (season: number): Promise<ChartPayload> => {
+    const rows = await getSeasonRows(season);
+    return buildChartPayload(season, rows);
+  },
+  ["chart-payload"],
+  { revalidate: false, tags: ["chart-payload"] },
 );
-
-const getPastChartPayload = unstable_cache(
-  async (season: number) => fetchChartPayload(season),
-  ["past-chart-payload"],
-  { revalidate: false, tags: ["chart-payload"] }
-);
-
-export async function getChartPayload(season: number): Promise<ChartPayload> {
-  if (season === LATEST_SEASON) {
-    return getLatestChartPayload(season);
-  }
-  return getPastChartPayload(season);
-}
 
 // Idempotent insert — duplicate (team, gameId) rows are ignored.
 export async function upsertResults(rows: GameResultRow[]): Promise<number> {
@@ -103,45 +90,30 @@ export async function getWinProbRows(season: number): Promise<WinProbRow[]> {
   return rows;
 }
 
-// Candle order follows the line chart's standings (rankedTeams), so the
-// dropdown/sidebar selection lines up across both chart modes.
-async function fetchCandlePayload(season: number): Promise<CandlePayload> {
-  const rows = await getWinProbRows(season);
-  return buildCandlePayload(season, rows);
-}
-
-const getLatestCandlePayload = unstable_cache(
-  async (season: number) => fetchCandlePayload(season),
-  ["latest-candle-payload"],
-  { revalidate: false, tags: ["candle-payload"] }
+const getCachedCandlePayload = unstable_cache(
+  async (season: number): Promise<CandlePayload> => {
+    const rows = await getWinProbRows(season);
+    return buildCandlePayload(season, rows);
+  },
+  ["candle-payload"],
+  { revalidate: false, tags: ["candle-payload"] },
 );
 
-const getPastCandlePayload = unstable_cache(
-  async (season: number) => fetchCandlePayload(season),
-  ["past-candle-payload"],
-  { revalidate: false, tags: ["candle-payload"] }
-);
-
+// `rankedTeams` (the line chart's standings) fixes candle team ordering so the
+// sidebar selection lines up across both chart modes. Returns a shallow copy
+// so the cached payload is never mutated.
 export async function getCandlePayload(
   season: number,
   rankedTeams?: string[],
 ): Promise<CandlePayload> {
-  let payload: CandlePayload;
-  if (season === LATEST_SEASON) {
-    payload = await getLatestCandlePayload(season);
-  } else {
-    payload = await getPastCandlePayload(season);
-  }
+  const payload = await getCachedCandlePayload(season);
+  if (!rankedTeams) return payload;
 
-  if (rankedTeams) {
-    // Return a shallow copy with sorted teams to prevent cached object mutation
-    const teamOrder = new Map(rankedTeams.map((t, idx) => [t, idx]));
-    const sortedTeams = [...payload.teams].sort(
-      (a, b) => (teamOrder.get(a) ?? 0) - (teamOrder.get(b) ?? 0)
-    );
-    return { ...payload, teams: sortedTeams };
-  }
-  return payload;
+  const teamOrder = new Map(rankedTeams.map((t, idx) => [t, idx]));
+  const sortedTeams = [...payload.teams].sort(
+    (a, b) => (teamOrder.get(a) ?? 0) - (teamOrder.get(b) ?? 0),
+  );
+  return { ...payload, teams: sortedTeams };
 }
 
 // Idempotent insert keyed on (team, gameId).

@@ -31,17 +31,16 @@ export const TEAM_FULL_NAMES: Record<string, string> = {
   키움: "키움 히어로즈",
 };
 
+// Chart line colors, tuned for contrast on the dark background.
 export const TEAM_COLORS: Record<string, string> = {
   LG: "#C30452",
   한화: "#FC4E00",
-  KT: "#DDE2E8", // silver
-  롯데: "#063980", // violet
+  KT: "#DDE2E8",
+  롯데: "#094DAD",
   KIA: "#EA0029",
   SSG: "#FFB81C",
-  삼성: "#146fde",
+  삼성: "#1176F2",
   NC: "#AF917B",
-  두산: "#534db0", // royal blue
-  키움: "#B07F4A", // brown
+  두산: "#534DB0",
+  키움: "#B0764A",
 };
-
-export const emblemUrl = (team: string) => `https://sports-phinf.pstatic.net/team/kbo/default/${TEAM_CODES[team]}.png`;

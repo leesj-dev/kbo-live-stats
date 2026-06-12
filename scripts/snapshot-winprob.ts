@@ -16,15 +16,10 @@ import { writeFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fetchWinProbabilities } from "../lib/scraper";
 import type { WinProbRow } from "../lib/candles";
-import { REGULAR_SEASON_START_DATES } from "../lib/seasons";
+import { REGULAR_SEASON_START_DATES, seasonCrawlRange } from "../lib/seasons";
 import { TEAM_NAMES } from "../lib/teams";
 
 const dataDir = path.join(process.cwd(), "data");
-
-function todayKstYmd(): string {
-  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
-  return `${kst.getUTCFullYear()}${String(kst.getUTCMonth() + 1).padStart(2, "0")}${String(kst.getUTCDate()).padStart(2, "0")}`;
-}
 
 const rnd = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n * 10) / 10));
@@ -121,13 +116,16 @@ async function runMock(season: number) {
 }
 
 async function runReal(season: number) {
-  const start = REGULAR_SEASON_START_DATES[season];
-  const today = todayKstYmd();
-  const end = season < Number(today.slice(0, 4)) ? `${season}1231` : today;
+  const range = seasonCrawlRange(season);
+  if (!range) {
+    console.error(`Season ${season} has not started yet`);
+    process.exit(1);
+  }
+  const { fromYmd, toYmd } = range;
   let hits = 0;
   let misses = 0;
-  process.stdout.write(`→ ${season}: crawling win prob ${start}–${end} ... `);
-  const rows = await fetchWinProbabilities(season, start, end, {
+  process.stdout.write(`→ ${season}: crawling win prob ${fromYmd}–${toYmd} ... `);
+  const rows = await fetchWinProbabilities(season, fromYmd, toYmd, {
     onHit: () => hits++,
     onMiss: () => misses++,
   });

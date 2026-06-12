@@ -1,5 +1,5 @@
 import { CODE_TO_TEAM } from "./teams";
-import { dashed } from "./seasons";
+import { dashed } from "./dates";
 import { listGames, naverHeaders, type ScheduleGame } from "./naver";
 import type { WinProbRow } from "./candles";
 
