@@ -4,9 +4,6 @@ import { teamGameResults } from "./db/schema";
 import type { GameResultRow } from "./scraper";
 import { buildChartPayload, type ChartPayload, type StatRow } from "./stats";
 
-// Cache tag shared by every season page; the cron route revalidates it.
-export const KBO_TAG = "kbo";
-
 // Read raw rows from Postgres, or from a local JSON snapshot when no database
 // is configured (offline preview / local dev without Neon).
 export async function getSeasonRows(season: number): Promise<StatRow[]> {

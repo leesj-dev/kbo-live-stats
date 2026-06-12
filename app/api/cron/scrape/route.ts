@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
+import { revalidatePath } from "next/cache";
 import { fetchGames } from "@/lib/scraper";
-import { upsertResults, KBO_TAG } from "@/lib/data";
+import { upsertResults } from "@/lib/data";
 import { LATEST_SEASON, REGULAR_SEASON_START_DATES } from "@/lib/seasons";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +44,8 @@ async function handle(req: Request) {
 
   const rows = await fetchGames(season, ymd, ymd);
   const inserted = await upsertResults(rows);
-  revalidateTag(KBO_TAG);
+  // Regenerate every season page immediately (all share the /[season] route).
+  revalidatePath("/[season]", "page");
 
   return NextResponse.json({
     ok: true,

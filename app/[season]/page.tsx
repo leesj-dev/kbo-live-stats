@@ -1,23 +1,20 @@
 import { notFound } from "next/navigation";
-import { unstable_cache } from "next/cache";
-import { getChartPayload, KBO_TAG } from "@/lib/data";
+import { getChartPayload } from "@/lib/data";
 import { SEASONS, isValidSeason } from "@/lib/seasons";
 import { Dashboard } from "@/components/Dashboard";
 
-// Pre-render every season as static HTML; the cron route regenerates them
-// daily via revalidateTag(KBO_TAG). No per-request server rendering.
-export const dynamic = "force-static";
+// Statically generated per season, refreshed via ISR (background regeneration).
+// This is NOT SSR: pages are served as static HTML. They regenerate at most
+// once per `revalidate` window when requested, and instantly when the cron
+// route calls revalidatePath after scraping. ISR also makes the site
+// self-healing — if a build runs before the DB is seeded (or without DB access),
+// the empty page is replaced on the next regeneration instead of staying empty.
 export const dynamicParams = false;
+export const revalidate = 600;
 
 export function generateStaticParams() {
   return SEASONS.map((season) => ({ season: String(season) }));
 }
-
-// Tagged + cached DB read so revalidateTag(KBO_TAG) can refresh the page.
-const cachedPayload = (season: number) =>
-  unstable_cache(() => getChartPayload(season), ["chart-payload", String(season)], {
-    tags: [KBO_TAG],
-  })();
 
 export default async function SeasonPage({
   params,
@@ -30,9 +27,10 @@ export default async function SeasonPage({
 
   let payload;
   try {
-    payload = await cachedPayload(season);
+    payload = await getChartPayload(season);
   } catch {
-    // DB unavailable at build time — render an empty shell rather than failing.
+    // DB unreachable during (re)generation — render an empty shell rather than
+    // failing the build; the next revalidation will retry.
     payload = {
       season,
       teams: [],
