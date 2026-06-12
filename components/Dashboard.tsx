@@ -320,10 +320,25 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
                     <span
                       className="font-mono text-[12px] font-semibold tabular-nums"
                       style={{
-                        color: s.margin > 0 ? "#5ad19a" : s.margin < 0 ? "#f0746e" : "var(--color-muted)",
+                        color:
+                          yAxis === "winRate"
+                            ? s.winRate > 0.5
+                              ? "#5ad19a"
+                              : s.winRate < 0.5
+                                ? "#f0746e"
+                                : "var(--color-muted)"
+                            : s.margin > 0
+                              ? "#5ad19a"
+                              : s.margin < 0
+                                ? "#f0746e"
+                                : "var(--color-muted)",
                       }}
                     >
-                      {s.margin > 0 ? `+${s.margin}` : s.margin}
+                      {yAxis === "winRate"
+                        ? s.winRate.toFixed(3).replace(/^0/, "")
+                        : s.margin > 0
+                          ? `+${s.margin}`
+                          : s.margin}
                     </span>
                   </button>
                 </li>
