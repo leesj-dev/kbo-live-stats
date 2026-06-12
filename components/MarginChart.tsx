@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChartPayload } from "@/lib/stats";
 import { TEAM_COLORS, TEAM_FULL_NAMES } from "@/lib/teams";
 
@@ -19,7 +19,7 @@ type Hover = {
   value: number;
 };
 
-function niceTicks(min: number, max: number, count: number): number[] {
+export function niceTicks(min: number, max: number, count: number): number[] {
   const span = max - min || 1;
   const raw = span / count;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
@@ -31,7 +31,7 @@ function niceTicks(min: number, max: number, count: number): number[] {
   return ticks;
 }
 
-const fmtRate = (v: number) => v.toFixed(3).replace(/^0/, "");
+export const fmtRate = (v: number) => v.toFixed(3).replace(/^0/, "");
 const md = (iso: string) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
 
 // Shared so the range slider can align its track exactly to the plot area
@@ -51,6 +51,58 @@ export function chartGeometry(width: number) {
   return { W, narrow, M, H };
 }
 
+export function computeYDomain(
+  payload: ChartPayload,
+  visibleTeams: string[],
+  xAxis: XAxis,
+  yAxis: YAxis,
+  rMin: number,
+  rMax: number,
+): { yMin: number; yMax: number } {
+  let yLo = Infinity;
+  let yHi = -Infinity;
+
+  for (const team of visibleTeams) {
+    if (xAxis === "game") {
+      for (const p of payload.byGame[team] ?? []) {
+        if (p.game < rMin - 1 || p.game > rMax) continue;
+        const y = yAxis === "margin" ? p.margin : p.winRate;
+        if (p.game >= rMin) {
+          if (y < yLo) yLo = y;
+          if (y > yHi) yHi = y;
+        }
+      }
+    } else {
+      const arr = payload.byDate[team] ?? [];
+      arr.forEach((p, i) => {
+        if (i < rMin - 1 || i > rMax) return;
+        const v = yAxis === "margin" ? p.margin : p.winRate;
+        if (v == null) return;
+        if (i >= rMin) {
+          if (v < yLo) yLo = v;
+          if (v > yHi) yHi = v;
+        }
+      });
+    }
+  }
+
+  if (!isFinite(yLo)) {
+    yLo = yAxis === "margin" ? -1 : 0;
+    yHi = 1;
+  }
+  if (yAxis === "margin") {
+    const m = Math.max(Math.abs(yLo), Math.abs(yHi), 4);
+    const pad = Math.ceil(m * 0.08) + 1;
+    yLo = -m - pad;
+    yHi = m + pad;
+  } else {
+    const pad = Math.max((yHi - yLo) * 0.12, 0.02);
+    yLo = Math.max(0, yLo - pad);
+    yHi = Math.min(1, yHi + pad);
+  }
+  return { yMin: yLo, yMax: yHi };
+}
+
 export function MarginChart({
   payload,
   xAxis,
@@ -60,6 +112,7 @@ export function MarginChart({
   onHighlight,
   width,
   xRange,
+  animate = true,
 }: {
   payload: ChartPayload;
   xAxis: XAxis;
@@ -69,16 +122,58 @@ export function MarginChart({
   onHighlight: (team: string | null) => void;
   width: number;
   xRange: [number, number];
+  animate?: boolean;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<Hover | null>(null);
+
+  // Team the pointer is currently "locked" onto, for sticky hover.
+  const stickyTeamRef = useRef<string | null>(null);
 
   // A hover captured under the previous axes is meaningless after a toggle —
   // clear it (and the highlight) so the tooltip never shows stale values.
   useEffect(() => {
     setHover(null);
+    stickyTeamRef.current = null;
     onHighlight(null);
   }, [xAxis, yAxis, onHighlight]);
+
+  const marginTooltipRef = useRef<HTMLDivElement>(null);
+  const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({
+    opacity: 0,
+  });
+
+  useLayoutEffect(() => {
+    const el = marginTooltipRef.current;
+    if (!el || !hover) return;
+    const parent = el.offsetParent as HTMLElement;
+    if (!parent) return;
+
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const pW = parent.clientWidth;
+    const pH = parent.clientHeight;
+
+    const targetX = hover.px;
+    const targetY = hover.py;
+
+    // Horizontally center, but clamp to parent bounds
+    let posX = targetX - w / 2;
+    posX = Math.max(4, Math.min(pW - w - 4, posX));
+
+    // Vertically place above the point, flip below if it overflows the top
+    let posY = targetY - h - 24;
+    if (posY < 4) {
+      posY = targetY + 24;
+    }
+    posY = Math.max(4, Math.min(pH - h - 4, posY));
+
+    setTooltipStyle({
+      left: `${posX}px`,
+      top: `${posY}px`,
+      opacity: 1,
+    });
+  }, [hover]);
 
   // Responsive coordinate system: W tracks the real container width (≈1 unit per
   // px) and the SVG scales via viewBox + height:auto, so there is no letterbox.
@@ -88,59 +183,43 @@ export function MarginChart({
   const labelSize = narrow ? 10 : 11;
   const tickSize = narrow ? 11 : 12.5;
 
-  const visibleTeams = payload.teams.filter((t) => !hidden.has(t));
-
   const [rMin, rMax] = xRange;
 
-  // Series clipped to the selected x-window; the y-domain auto-fits to whatever
-  // is visible so narrowing the range rescales vertically and stays readable.
-  const { series, yMin, yMax } = useMemo(() => {
-    const out: Series[] = [];
-    let yLo = Infinity;
-    let yHi = -Infinity;
+  const visibleTeams = useMemo(
+    () => payload.teams.filter((t) => !hidden.has(t)),
+    [payload.teams, hidden],
+  );
 
+  const { yMin, yMax } = useMemo(
+    () => computeYDomain(payload, visibleTeams, xAxis, yAxis, rMin, rMax),
+    [payload, visibleTeams, xAxis, yAxis, rMin, rMax],
+  );
+
+  const series = useMemo(() => {
+    const out: Series[] = [];
     for (const team of visibleTeams) {
       const pts: Pt[] = [];
       if (xAxis === "game") {
         for (const p of payload.byGame[team] ?? []) {
-          if (p.game < rMin || p.game > rMax) continue;
+          if (p.game < rMin - 1 || p.game > rMax) continue;
           const y = yAxis === "margin" ? p.margin : p.winRate;
           pts.push({ x: p.game, y, date: p.date, game: p.game });
-          if (y < yLo) yLo = y;
-          if (y > yHi) yHi = y;
         }
       } else {
         const arr = payload.byDate[team] ?? [];
         arr.forEach((p, i) => {
-          if (i < rMin || i > rMax) return;
+          if (i < rMin - 1 || i > rMax) return;
           const v = yAxis === "margin" ? p.margin : p.winRate;
           if (v == null) return; // skip leading gap before first game
           pts.push({ x: i, y: v, date: p.date, game: null });
-          if (v < yLo) yLo = v;
-          if (v > yHi) yHi = v;
         });
       }
       if (pts.length) out.push({ team, pts });
     }
-
-    if (!isFinite(yLo)) {
-      yLo = yAxis === "margin" ? -1 : 0;
-      yHi = 1;
-    }
-    if (yAxis === "margin") {
-      const m = Math.max(Math.abs(yLo), Math.abs(yHi), 4);
-      const pad = Math.ceil(m * 0.08) + 1;
-      yLo = -m - pad;
-      yHi = m + pad;
-    } else {
-      const pad = Math.max((yHi - yLo) * 0.12, 0.02);
-      yLo = Math.max(0, yLo - pad);
-      yHi = Math.min(1, yHi + pad);
-    }
-    return { series: out, yMin: yLo, yMax: yHi };
+    return out;
   }, [payload, visibleTeams, xAxis, yAxis, rMin, rMax]);
 
-  const xMin = rMin;
+  const xMin = rMin - 1;
   const xMax = rMax;
   const sx = (x: number) => M.left + ((x - xMin) / (xMax - xMin || 1)) * innerW;
   const sy = (y: number) => M.top + (1 - (y - yMin) / (yMax - yMin || 1)) * innerH;
@@ -152,7 +231,19 @@ export function MarginChart({
 
   const xTicks = useMemo(() => {
     if (xAxis === "game") {
-      const ticks = niceTicks(xMin, xMax, narrow ? 5 : 8).filter((t) => t >= xMin && t <= xMax);
+      const targetCount = narrow ? 6 : 12;
+      const count = rMax - rMin + 1;
+      const ticks: number[] = [];
+      if (count <= targetCount) {
+        for (let g = rMin; g <= rMax; g++) ticks.push(g);
+      } else {
+        ticks.push(rMin);
+        const step = (rMax - rMin) / (targetCount - 1);
+        for (let i = 1; i < targetCount - 1; i++) {
+          ticks.push(Math.round(rMin + i * step));
+        }
+        ticks.push(rMax);
+      }
       return ticks.map((t) => ({ x: t, label: String(t) }));
     }
     const n = payload.dates.length;
@@ -161,12 +252,21 @@ export function MarginChart({
     const hi = Math.min(n - 1, Math.floor(xMax));
     const span = hi - lo;
     if (span <= 0) return [{ x: lo, label: md(payload.dates[lo]) }];
-    const target = Math.min(narrow ? 7 : 14, span + 1);
-    const stepIdx = Math.max(1, Math.round(span / target));
-    const ticks: { x: number; label: string }[] = [];
-    for (let i = lo; i <= hi; i += stepIdx) ticks.push({ x: i, label: md(payload.dates[i]) });
-    return ticks;
-  }, [xAxis, xMin, xMax, payload.dates, narrow]);
+
+    const targetCount = narrow ? 7 : 14;
+    const ticks: number[] = [];
+    if (span + 1 <= targetCount) {
+      for (let i = lo; i <= hi; i++) ticks.push(i);
+    } else {
+      ticks.push(lo);
+      const step = span / (targetCount - 1);
+      for (let i = 1; i < targetCount - 1; i++) {
+        ticks.push(Math.round(lo + i * step));
+      }
+      ticks.push(hi);
+    }
+    return ticks.map((t) => ({ x: t, label: md(payload.dates[t]) }));
+  }, [xAxis, rMin, rMax, xMin, xMax, payload.dates, narrow]);
 
   const linePath = useCallback(
     (pts: Pt[]) => pts.map((p, i) => `${i === 0 ? "M" : "L"}${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(" "),
@@ -183,23 +283,57 @@ export function MarginChart({
 
       let best: Hover | null = null;
       let bestD = Infinity;
+
+      const active = stickyTeamRef.current;
+      let cur: Hover | null = null;
+      let curDx = Infinity;
+      let curD = Infinity;
+
       for (const s of series) {
+        const isActive = s.team === active;
         for (const p of s.pts) {
           const px = sx(p.x);
           const py = sy(p.y);
-          const d = (px - mx) ** 2 + (py - my) ** 2;
+          
+          const dx = px - mx;
+          const dy = py - my;
+          const d = dx * dx + dy * dy;
+
           if (d < bestD) {
             bestD = d;
             best = { team: s.team, px, py, date: p.date, game: p.game, value: p.y };
           }
+
+          if (isActive) {
+            const adx = Math.abs(dx);
+            if (adx < curDx) {
+              curDx = adx;
+              curD = d;
+              cur = { team: s.team, px, py, date: p.date, game: p.game, value: p.y };
+            }
+          }
         }
       }
-      const hitR = narrow ? 44 : 60;
-      if (best && bestD < hitR * hitR) {
-        setHover(best);
-        onHighlight(best.team);
+      const hitR = narrow ? 46 : 62; // acquire radius
+      // Keep the locked team unless another is clearly closer (hysteresis), and
+      // drop it only once the pointer strays well past the line.
+      const sticky = narrow ? 42 : 56;
+      const dropR = hitR * 2.6;
+
+      let chosen: Hover | null = null;
+      if (cur && Math.sqrt(curD) <= dropR && Math.sqrt(curD) <= Math.sqrt(bestD) + sticky) {
+        chosen = cur;
+      } else if (best && bestD <= hitR * hitR) {
+        chosen = best;
+      }
+
+      if (chosen) {
+        setHover(chosen);
+        stickyTeamRef.current = chosen.team;
+        onHighlight(chosen.team);
       } else {
         setHover(null);
+        stickyTeamRef.current = null;
         onHighlight(null);
       }
     },
@@ -208,6 +342,7 @@ export function MarginChart({
 
   const onLeave = useCallback(() => {
     setHover(null);
+    stickyTeamRef.current = null;
     onHighlight(null);
   }, [onHighlight]);
 
@@ -296,21 +431,25 @@ export function MarginChart({
                 strokeWidth={isHi ? 3 : 1.9}
                 strokeLinejoin="round"
                 strokeLinecap="round"
-                pathLength={1}
-                style={{
-                  strokeDasharray: 1,
-                  strokeDashoffset: 1,
-                  animation: `draw 1.1s cubic-bezier(0.4,0,0.1,1) forwards`,
-                  animationDelay: `${0.05 + i * 0.04}s`,
-                }}
+                pathLength={animate ? 1 : undefined}
+                style={
+                  animate
+                    ? {
+                        strokeDasharray: 1,
+                        strokeDashoffset: 1,
+                        animation: `draw 1.1s cubic-bezier(0.4,0,0.1,1) forwards`,
+                        animationDelay: `${0.05 + i * 0.04}s`,
+                      }
+                    : undefined
+                }
               />
               {s.pts.length > 0 &&
                 (() => {
                   const last = s.pts[s.pts.length - 1];
                   return (
                     <g
-                      className="animate-rise"
-                      style={{ animationDelay: `${0.9 + i * 0.04}s` }}
+                      className={animate ? "animate-rise" : undefined}
+                      style={animate ? { animationDelay: `${0.9 + i * 0.04}s` } : undefined}
                     >
                       <circle
                         cx={sx(last.x)}
@@ -350,12 +489,9 @@ export function MarginChart({
 
       {hover && (
         <div
-          className="pointer-events-none absolute z-10 flex w-max flex-col items-center whitespace-nowrap rounded-lg border border-[var(--color-line-strong)] bg-[var(--color-panel-2)]/95 px-4 py-2 text-center backdrop-blur"
-          style={{
-            left: `${(hover.px / W) * 100}%`,
-            top: `${(hover.py / H) * 100}%`,
-            transform: `translate(-50%, calc(-100% - 14px))`,
-          }}
+          ref={marginTooltipRef}
+          className="pointer-events-none absolute z-40 flex w-max flex-col items-center whitespace-nowrap rounded-lg border border-[var(--color-line-strong)] bg-[var(--color-panel-2)]/95 px-4 py-2 text-center backdrop-blur transition-opacity duration-100"
+          style={tooltipStyle}
         >
           <div className="flex items-center gap-1.5">
             <span

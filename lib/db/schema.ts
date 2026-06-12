@@ -2,6 +2,7 @@ import {
   pgTable,
   serial,
   integer,
+  smallint,
   text,
   date,
   char,
@@ -22,6 +23,8 @@ export const teamGameResults = pgTable(
     gameId: text("game_id").notNull(), // Naver gameId
     gameDate: date("game_date").notNull(), // YYYY-MM-DD
     result: char("result", { length: 1 }).notNull(), // 'w' | 'l' | 'd'
+    teamScore: integer("team_score"),
+    opponentScore: integer("opponent_score"),
   },
   (t) => ({
     teamGameUnique: unique("team_game_unique").on(t.team, t.gameId),
@@ -52,6 +55,13 @@ export const teamGameWinProb = pgTable(
     wpHigh: real("wp_high").notNull(), // in-game maximum win prob, %
     wpLow: real("wp_low").notNull(), // in-game minimum win prob, %
     wpClose: real("wp_close").notNull(), // final win prob, % (≈100 win / 0 loss / 50 draw)
+    // Full win-probability path for the tooltip graph (x = plate appearance).
+    // Aligned arrays: wpSeries[i] is this team's win prob % at plate appearance i,
+    // wpInnings[i] the inning that plate appearance belonged to.
+    wpSeries: real("wp_series").array().notNull().default([]),
+    wpInnings: smallint("wp_innings").array().notNull().default([]),
+    teamScore: integer("team_score"),
+    opponentScore: integer("opponent_score"),
   },
   (t) => ({
     teamGameWpUnique: unique("team_game_wp_unique").on(t.team, t.gameId),

@@ -1,4 +1,5 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { dashed, LATEST_SEASON } from "./seasons";
 import { getDb, hasDb } from "./db";
 import { teamGameResults, teamGameWinProb } from "./db/schema";
 import type { GameResultRow } from "./scraper";
@@ -9,6 +10,7 @@ import {
   type WinProbRow,
 } from "./candles";
 import type { NewTeamGameWinProb } from "./db/schema";
+import { unstable_cache } from "next/cache";
 
 // Read raw rows from Postgres, or from a local JSON snapshot when no database
 // is configured (offline preview / local dev without Neon).
@@ -34,9 +36,28 @@ export async function getSeasonRows(season: number): Promise<StatRow[]> {
   }));
 }
 
-export async function getChartPayload(season: number): Promise<ChartPayload> {
+async function fetchChartPayload(season: number): Promise<ChartPayload> {
   const rows = await getSeasonRows(season);
   return buildChartPayload(season, rows);
+}
+
+const getLatestChartPayload = unstable_cache(
+  async (season: number) => fetchChartPayload(season),
+  ["latest-chart-payload"],
+  { revalidate: false, tags: ["chart-payload"] }
+);
+
+const getPastChartPayload = unstable_cache(
+  async (season: number) => fetchChartPayload(season),
+  ["past-chart-payload"],
+  { revalidate: false, tags: ["chart-payload"] }
+);
+
+export async function getChartPayload(season: number): Promise<ChartPayload> {
+  if (season === LATEST_SEASON) {
+    return getLatestChartPayload(season);
+  }
+  return getPastChartPayload(season);
 }
 
 // Idempotent insert — duplicate (team, gameId) rows are ignored.
@@ -45,8 +66,13 @@ export async function upsertResults(rows: GameResultRow[]): Promise<number> {
   const inserted = await getDb()
     .insert(teamGameResults)
     .values(rows)
-    .onConflictDoNothing({
+    .onConflictDoUpdate({
       target: [teamGameResults.team, teamGameResults.gameId],
+      set: {
+        result: sql`excluded.result`,
+        teamScore: sql`excluded.team_score`,
+        opponentScore: sql`excluded.opponent_score`,
+      },
     })
     .returning({ id: teamGameResults.id });
   return inserted.length;
@@ -67,6 +93,10 @@ export async function getWinProbRows(season: number): Promise<WinProbRow[]> {
       wpHigh: teamGameWinProb.wpHigh,
       wpLow: teamGameWinProb.wpLow,
       wpClose: teamGameWinProb.wpClose,
+      series: teamGameWinProb.wpSeries,
+      innings: teamGameWinProb.wpInnings,
+      teamScore: teamGameWinProb.teamScore,
+      opponentScore: teamGameWinProb.opponentScore,
     })
     .from(teamGameWinProb)
     .where(eq(teamGameWinProb.season, season));
@@ -75,12 +105,43 @@ export async function getWinProbRows(season: number): Promise<WinProbRow[]> {
 
 // Candle order follows the line chart's standings (rankedTeams), so the
 // dropdown/sidebar selection lines up across both chart modes.
+async function fetchCandlePayload(season: number): Promise<CandlePayload> {
+  const rows = await getWinProbRows(season);
+  return buildCandlePayload(season, rows);
+}
+
+const getLatestCandlePayload = unstable_cache(
+  async (season: number) => fetchCandlePayload(season),
+  ["latest-candle-payload"],
+  { revalidate: false, tags: ["candle-payload"] }
+);
+
+const getPastCandlePayload = unstable_cache(
+  async (season: number) => fetchCandlePayload(season),
+  ["past-candle-payload"],
+  { revalidate: false, tags: ["candle-payload"] }
+);
+
 export async function getCandlePayload(
   season: number,
   rankedTeams?: string[],
 ): Promise<CandlePayload> {
-  const rows = await getWinProbRows(season);
-  return buildCandlePayload(season, rows, rankedTeams);
+  let payload: CandlePayload;
+  if (season === LATEST_SEASON) {
+    payload = await getLatestCandlePayload(season);
+  } else {
+    payload = await getPastCandlePayload(season);
+  }
+
+  if (rankedTeams) {
+    // Return a shallow copy with sorted teams to prevent cached object mutation
+    const teamOrder = new Map(rankedTeams.map((t, idx) => [t, idx]));
+    const sortedTeams = [...payload.teams].sort(
+      (a, b) => (teamOrder.get(a) ?? 0) - (teamOrder.get(b) ?? 0)
+    );
+    return { ...payload, teams: sortedTeams };
+  }
+  return payload;
 }
 
 // Idempotent insert keyed on (team, gameId).
@@ -89,12 +150,18 @@ export async function upsertWinProb(
   rows: WinProbRow[],
 ): Promise<number> {
   if (rows.length === 0) return 0;
-  const values: NewTeamGameWinProb[] = rows.map((r) => ({ season, ...r }));
+  const values: NewTeamGameWinProb[] = rows.map(
+    ({ series, innings, ...r }) => ({ season, ...r, wpSeries: series, wpInnings: innings }),
+  );
   const inserted = await getDb()
     .insert(teamGameWinProb)
     .values(values)
-    .onConflictDoNothing({
+    .onConflictDoUpdate({
       target: [teamGameWinProb.team, teamGameWinProb.gameId],
+      set: {
+        teamScore: sql`excluded.team_score`,
+        opponentScore: sql`excluded.opponent_score`,
+      },
     })
     .returning({ id: teamGameWinProb.id });
   return inserted.length;
@@ -118,4 +185,24 @@ async function readJsonSnapshot<T>(name: string): Promise<T[]> {
   } catch {
     return [];
   }
+}
+
+export async function getExistingWinProbGameIds(
+  season: number,
+  fromYmd: string,
+  toYmd: string,
+): Promise<string[]> {
+  if (!hasDb()) return [];
+  const rows = await getDb()
+    .select({ gameId: teamGameWinProb.gameId })
+    .from(teamGameWinProb)
+    .where(
+      and(
+        eq(teamGameWinProb.season, season),
+        gte(teamGameWinProb.gameDate, dashed(fromYmd)),
+        lte(teamGameWinProb.gameDate, dashed(toYmd)),
+      ),
+    );
+  // De-duplicate gameIds
+  return Array.from(new Set(rows.map((r) => r.gameId)));
 }

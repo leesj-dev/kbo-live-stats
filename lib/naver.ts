@@ -40,6 +40,8 @@ export type ScheduleGame = {
   statusCode?: string; // RESULT when finished
   cancel?: boolean;
   roundCode?: string; // kbo_r for regular season
+  homeTeamScore?: number;
+  awayTeamScore?: number;
 };
 
 type RawGame = Partial<ScheduleGame>;
@@ -110,6 +112,8 @@ export async function listGames(
         statusCode: g.statusCode,
         cancel: g.cancel,
         roundCode: g.roundCode,
+        homeTeamScore: g.homeTeamScore,
+        awayTeamScore: g.awayTeamScore,
       });
     }
   }

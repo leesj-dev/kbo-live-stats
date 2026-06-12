@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
-import { revalidatePath } from "next/cache";
-import { fetchGames } from "@/lib/scraper";
-import { fetchWinProbabilities } from "@/lib/winprob-scraper";
-import { upsertResults, upsertWinProb } from "@/lib/data";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { fetchGames, fetchWinProbabilities } from "@/lib/scraper";
+import { upsertResults, upsertWinProb, getExistingWinProbGameIds } from "@/lib/data";
 import { LATEST_SEASON, REGULAR_SEASON_START_DATES } from "@/lib/seasons";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Returns yesterday in KST as YYYYMMDD.
-function yesterdayKstYmd(): string {
+// Returns KST date YYYYMMDD with an optional day offset.
+function getKstYmd(offsetDays: number = 0): string {
   const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000); // shift to KST
-  kstNow.setUTCDate(kstNow.getUTCDate() - 1);
+  if (offsetDays !== 0) {
+    kstNow.setUTCDate(kstNow.getUTCDate() + offsetDays);
+  }
   const y = kstNow.getUTCFullYear();
   const m = String(kstNow.getUTCMonth() + 1).padStart(2, "0");
   const d = String(kstNow.getUTCDate()).padStart(2, "0");
@@ -34,16 +35,30 @@ async function handle(req: Request) {
   const dateParam = url.searchParams.get("date");
   const seasonParam = url.searchParams.get("season");
 
-  const ymd = dateParam ?? yesterdayKstYmd();
-  const season = seasonParam ? Number(seasonParam) : Number(ymd.slice(0, 4));
+  let fromYmd: string;
+  let toYmd: string;
+
+  if (dateParam) {
+    fromYmd = dateParam;
+    toYmd = dateParam;
+  } else {
+    // Crawl both yesterday and today KST to capture late-night & extra-inning finishes
+    fromYmd = getKstYmd(-1);
+    toYmd = getKstYmd(0);
+  }
+
+  const season = seasonParam ? Number(seasonParam) : Number(toYmd.slice(0, 4));
 
   // Skip days before the season opener (off-season / preseason).
   const start = REGULAR_SEASON_START_DATES[season];
-  if (start && ymd < start) {
-    return NextResponse.json({ ok: true, skipped: "before-season", ymd });
+  if (start && toYmd < start) {
+    return NextResponse.json({ ok: true, skipped: "before-season", fromYmd, toYmd });
   }
 
-  const rows = await fetchGames(season, ymd, ymd);
+  // Adjust start range if fromYmd is before the season opener
+  const activeFromYmd = start && fromYmd < start ? start : fromYmd;
+
+  const rows = await fetchGames(season, activeFromYmd, toYmd);
   const inserted = await upsertResults(rows);
 
   // Crawl the day's live win-probability paths for the candlestick chart. Kept
@@ -51,20 +66,26 @@ async function handle(req: Request) {
   let wpFetched = 0;
   let wpInserted = 0;
   try {
-    const wpRows = await fetchWinProbabilities(season, ymd, ymd);
+    const excludeGameIds = await getExistingWinProbGameIds(season, activeFromYmd, toYmd);
+    const wpRows = await fetchWinProbabilities(season, activeFromYmd, toYmd, {
+      excludeGameIds,
+    });
     wpFetched = wpRows.length;
     wpInserted = await upsertWinProb(season, wpRows);
   } catch (err) {
     console.error("win-prob crawl failed", err);
   }
 
-  // Regenerate every season page immediately (all share the /[season] route).
+  // Purge server-side query caches and regenerate every season page immediately.
+  revalidateTag("chart-payload");
+  revalidateTag("candle-payload");
   revalidatePath("/[season]", "page");
 
   return NextResponse.json({
     ok: true,
     season,
-    ymd,
+    fromYmd: activeFromYmd,
+    toYmd,
     fetched: rows.length,
     inserted,
     winProb: { fetched: wpFetched, inserted: wpInserted },

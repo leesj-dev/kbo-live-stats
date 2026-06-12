@@ -12,7 +12,7 @@ import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { listGames } from "../lib/naver";
-import { probeWinProbEndpoints, fetchGameWinProb } from "../lib/winprob-scraper";
+import { probeWinProbEndpoints, fetchGameWinProb } from "../lib/scraper";
 import { REGULAR_SEASON_START_DATES } from "../lib/seasons";
 
 async function pickRecentGameId(): Promise<string | null> {

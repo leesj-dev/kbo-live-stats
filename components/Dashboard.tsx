@@ -6,10 +6,10 @@ import type { ChartPayload } from "@/lib/stats";
 import type { CandlePayload } from "@/lib/candles";
 import { TEAM_COLORS } from "@/lib/teams";
 import { MarginChart, chartGeometry, type XAxis, type YAxis } from "./MarginChart";
-import { CandleChart } from "./CandleChart";
+import { DetailChart } from "./DetailChart";
 import { RangeSlider } from "./RangeSlider";
 
-type ChartKind = "line" | "candle";
+type ChartKind = "basic" | "detailed";
 
 function Segmented<T extends string>({
   value,
@@ -32,7 +32,7 @@ function Segmented<T extends string>({
             <button
               key={o.value}
               onClick={() => onChange(o.value)}
-              className={`relative rounded-[6px] px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
+              className={`relative rounded-[6px] px-3 sm:px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
                 active
                   ? "bg-[var(--color-panel-2)] text-[var(--color-fg)] shadow-[inset_0_0_0_1px_var(--color-line-strong)]"
                   : "text-[var(--color-muted)] hover:text-[var(--color-fg)]"
@@ -47,7 +47,19 @@ function Segmented<T extends string>({
   );
 }
 
-function SeasonDropdown({ seasons, current }: { seasons: number[]; current: number }) {
+function SeasonDropdown({
+  seasons,
+  current,
+  chartKind,
+  xAxis,
+  yAxis,
+}: {
+  seasons: number[];
+  current: number;
+  chartKind: string;
+  xAxis: string;
+  yAxis: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -68,8 +80,12 @@ function SeasonDropdown({ seasons, current }: { seasons: number[]; current: numb
 
   // Prefetch sibling seasons so navigation feels instant.
   useEffect(() => {
-    if (open) seasons.forEach((s) => router.prefetch(`/${s}`));
-  }, [open, seasons, router]);
+    if (open) {
+      seasons.forEach((s) => {
+        router.prefetch(`/${s}?kind=${chartKind}&x=${xAxis}&y=${yAxis}`);
+      });
+    }
+  }, [open, seasons, router, chartKind, xAxis, yAxis]);
 
   return (
     <div
@@ -115,7 +131,9 @@ function SeasonDropdown({ seasons, current }: { seasons: number[]; current: numb
                   aria-selected={active}
                   onClick={() => {
                     setOpen(false);
-                    if (!active) router.push(`/${s}`);
+                    if (!active) {
+                      router.push(`/${s}?kind=${chartKind}&x=${xAxis}&y=${yAxis}`);
+                    }
                   }}
                   className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[13px] tabular-nums transition-colors ${
                     active
@@ -150,28 +168,28 @@ function SeasonDropdown({ seasons, current }: { seasons: number[]; current: numb
   );
 }
 
-export function Dashboard({
-  payload,
-  candles,
-  seasons,
-}: {
-  payload: ChartPayload;
-  candles: CandlePayload;
-  seasons: number[];
-}) {
-  const [chartKind, setChartKind] = useState<ChartKind>("line");
+export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload; candles: CandlePayload; seasons: number[] }) {
+  const [chartKind, setChartKind] = useState<ChartKind>("basic");
   const [xAxis, setXAxis] = useState<XAxis>("date");
   const [yAxis, setYAxis] = useState<YAxis>("margin");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [highlight, setHighlight] = useState<string | null>(null);
-  // Candle mode is single-ticker, like a stock chart: one team at a time.
-  const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+  const isDetailed = chartKind === "detailed";
+  const hasDetailedData = candles.teams.length > 0;
 
-  const isCandle = chartKind === "candle";
-  const hasCandleData = candles.teams.length > 0;
-  // Resolve the candle team: explicit pick, else best-ranked team with data.
-  const candleTeam =
-    selectedTeam && candles.teams.includes(selectedTeam) ? selectedTeam : candles.teams[0] ?? null;
+  const [shouldAnimate, setShouldAnimate] = useState(true);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const kind = params.get("kind");
+    const x = params.get("x");
+    const y = params.get("y");
+    if (kind === "basic" || kind === "detailed") setChartKind(kind);
+    if (x === "date" || x === "game") setXAxis(x);
+    if (y === "margin" || y === "winRate") setYAxis(y);
+
+    const timer = setTimeout(() => setShouldAnimate(false), 1200);
+    return () => clearTimeout(timer);
+  }, []);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(960);
@@ -183,11 +201,10 @@ export function Dashboard({
     return () => ro.disconnect();
   }, []);
 
-  // The active dataset drives the x-axis bounds and date labels (line vs candle
-  // can span different dates when win-prob data is partial).
-  const activeDates = isCandle ? candles.dates : payload.dates;
+  // The active dataset drives the x-axis bounds and date labels
+  const activeDates = isDetailed ? candles.dates : payload.dates;
   const dateMaxIdx = Math.max(0, activeDates.length - 1);
-  const gameMax = Math.max(1, isCandle ? candles.maxGames : payload.maxGames);
+  const gameMax = Math.max(1, isDetailed ? candles.maxGames : payload.maxGames);
   const [dateRange, setDateRange] = useState<[number, number]>([0, dateMaxIdx]);
   const [gameRange, setGameRange] = useState<[number, number]>([1, gameMax]);
   useEffect(() => {
@@ -206,12 +223,8 @@ export function Dashboard({
     return d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : "—";
   };
 
-  // Sidebar click: line mode toggles a line on/off; candle mode picks the ticker.
+  // Sidebar click: toggles a team on/off.
   const onTeamClick = (team: string) => {
-    if (isCandle) {
-      if (candles.teams.includes(team)) setSelectedTeam(team);
-      return;
-    }
     setHidden((prev) => {
       const next = new Set(prev);
       next.has(team) ? next.delete(team) : next.add(team);
@@ -239,9 +252,9 @@ export function Dashboard({
   const updatedLabel = `${updated.getFullYear()}-${String(updated.getMonth() + 1).padStart(2, "0")}-${String(updated.getDate()).padStart(2, "0")}`;
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-5 pb-20 pt-8 sm:px-8">
-      <header className="animate-rise relative z-30 flex flex-wrap items-start justify-between gap-6 border-b border-[var(--color-line)] pb-3">
-        <h1 className="mt-1 font-bold text-5xl leading-[0.9] tracking-tight text-[var(--color-fg)]">
+    <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8">
+      <header className="animate-rise relative z-30 flex flex-wrap items-start justify-between gap-3 sm:gap-6 border-b border-[var(--color-line)] pb-3">
+        <h1 className="mt-1 font-bold text-[34px] sm:text-5xl leading-[0.9] tracking-tight text-[var(--color-fg)]">
           <span className="text-[var(--color-muted)] font-normal">오늘의</span> 승패마진
         </h1>
 
@@ -249,19 +262,22 @@ export function Dashboard({
           <SeasonDropdown
             seasons={seasons}
             current={payload.season}
+            chartKind={chartKind}
+            xAxis={xAxis}
+            yAxis={yAxis}
           />
           <span className="tracking-wide text-[11px] text-[var(--color-muted)]">최종 업데이트 {updatedLabel}</span>
         </div>
       </header>
 
-      <div className="mt-7 flex flex-wrap items-end gap-x-8 gap-y-4">
+      <div className="mt-7 flex flex-wrap items-end gap-x-2 min-[406px]:gap-x-4 min-[438px]:gap-x-8 gap-y-4">
         <Segmented
           label="차트"
           value={chartKind}
           onChange={setChartKind}
           options={[
-            { value: "line", label: "라인" },
-            { value: "candle", label: "캔들" },
+            { value: "basic", label: "기본" },
+            { value: "detailed", label: "상세" },
           ]}
         />
         <Segmented
@@ -273,32 +289,15 @@ export function Dashboard({
             { value: "game", label: "경기별" },
           ]}
         />
-        {!isCandle && (
-          <Segmented
-            label="세로축"
-            value={yAxis}
-            onChange={setYAxis}
-            options={[
-              { value: "margin", label: "승패마진" },
-              { value: "winRate", label: "승률" },
-            ]}
-          />
-        )}
-        {isCandle && candleTeam && (
-          <div className="flex flex-col gap-[5px]">
-            <span className="font-mono text-[12px] uppercase tracking-wider text-[var(--color-muted)] ml-1">
-              팀
-            </span>
-            <div className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] px-3.5 py-1.5">
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ background: TEAM_COLORS[candleTeam] }}
-              />
-              <span className="text-[13px] font-medium text-[var(--color-fg)]">{candleTeam}</span>
-              <span className="text-[11px] text-[var(--color-muted)]">우측에서 선택</span>
-            </div>
-          </div>
-        )}
+        <Segmented
+          label="세로축"
+          value={yAxis}
+          onChange={setYAxis}
+          options={[
+            { value: "margin", label: "승패마진" },
+            { value: "winRate", label: "승률" },
+          ]}
+        />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_192px]">
@@ -307,15 +306,20 @@ export function Dashboard({
           className="animate-rise rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)]/60 p-3 sm:p-4"
           style={{ animationDelay: "0.08s" }}
         >
-          {isCandle ? (
-            hasCandleData && candleTeam ? (
+          {isDetailed ? (
+            hasDetailedData ? (
               <>
-                <CandleChart
+                <DetailChart
                   candles={candles}
-                  team={candleTeam}
+                  payload={payload}
                   xAxis={xAxis}
+                  yAxis={yAxis}
+                  hidden={hidden}
+                  highlight={highlight}
+                  onHighlight={setHighlight}
                   width={width}
                   xRange={range}
+                  animate={shouldAnimate}
                 />
                 <div
                   className="mt-1"
@@ -335,12 +339,7 @@ export function Dashboard({
               </>
             ) : (
               <div className="flex h-[360px] flex-col items-center justify-center gap-2 text-center">
-                <span className="text-[var(--color-muted)]">
-                  {payload.season} 시즌 승리확률 데이터가 아직 없습니다.
-                </span>
-                <span className="text-[12px] text-[var(--color-faint)]">
-                  자정 크롤링이 누적되면 캔들차트가 표시됩니다.
-                </span>
+                <span className="text-[var(--color-muted)]">{payload.season} 시즌 데이터가 아직 없습니다.</span>
               </div>
             )
           ) : hasData ? (
@@ -354,6 +353,7 @@ export function Dashboard({
                 onHighlight={setHighlight}
                 width={width}
                 xRange={range}
+                animate={shouldAnimate}
               />
               <div
                 className="mt-1"
@@ -384,28 +384,22 @@ export function Dashboard({
         >
           <div className="mb-2 flex items-baseline justify-between px-1">
             <span className="text-[16px] font-semibold text-[var(--color-fg)]">순위</span>
-            {isCandle && (
-              <span className="text-[10px] tracking-wide text-[var(--color-faint)]">팀 선택</span>
-            )}
           </div>
           <ul className="scroll-thin flex flex-col gap-0.5">
             {standings.map((s, i) => {
-              const noData = isCandle && !candles.teams.includes(s.team);
-              const selected = isCandle && candleTeam === s.team;
-              const off = isCandle ? noData : hidden.has(s.team);
-              const hi = isCandle ? selected : highlight === s.team;
+              const noData = isDetailed && !candles.teams.includes(s.team);
+              const off = hidden.has(s.team) || noData;
+              const hi = highlight === s.team;
               return (
                 <li key={s.team}>
                   <button
                     onClick={() => onTeamClick(s.team)}
-                    onPointerEnter={() => !isCandle && setHighlight(s.team)}
-                    onPointerLeave={() => !isCandle && setHighlight(null)}
+                    onPointerEnter={() => !noData && setHighlight(s.team)}
+                    onPointerLeave={() => !noData && setHighlight(null)}
                     disabled={noData}
                     className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
                       hi ? "bg-[var(--color-panel-2)]" : "hover:bg-[var(--color-panel-2)]/60"
-                    } ${selected ? "shadow-[inset_0_0_0_1px_var(--color-line-strong)]" : ""} ${
-                      off ? "opacity-40" : ""
-                    } ${noData ? "cursor-not-allowed" : ""}`}
+                    } ${off ? "opacity-40" : ""} ${noData ? "cursor-not-allowed" : ""}`}
                   >
                     <span className="w-4 font-mono text-[12px] font-medium tabular-nums text-[var(--color-muted)]">{i + 1}</span>
                     <span
@@ -433,11 +427,7 @@ export function Dashboard({
                                 : "var(--color-muted)",
                       }}
                     >
-                      {yAxis === "winRate"
-                        ? s.winRate.toFixed(3).replace(/^0/, "")
-                        : s.margin > 0
-                          ? `+${s.margin}`
-                          : s.margin}
+                      {yAxis === "winRate" ? s.winRate.toFixed(3).replace(/^0/, "") : s.margin > 0 ? `+${s.margin}` : s.margin}
                     </span>
                   </button>
                 </li>
@@ -447,7 +437,7 @@ export function Dashboard({
         </aside>
       </div>
       <footer>
-        <div className="mt-10 flex flex-col items-center gap-2 text-center text-sm text-[var(--color-muted)]">
+        <div className="mt-8 flex flex-col items-center gap-2 text-center text-sm text-[var(--color-muted)]">
           <span>
             © 2026&nbsp;
             <a

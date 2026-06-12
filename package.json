@@ -12,7 +12,8 @@
     "snapshot": "tsx scripts/snapshot.ts",
     "snapshot:winprob": "tsx scripts/snapshot-winprob.ts",
     "probe:winprob": "tsx scripts/probe-winprob.ts",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "verify:winprob": "tsx scripts/verify-winprob.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

@@ -29,9 +29,17 @@ export default async function SeasonPage({
   let payload;
   let candles: CandlePayload;
   try {
-    payload = await getChartPayload(season);
-    // Candle order follows the line chart's standings so selections line up.
-    candles = await getCandlePayload(season, payload.teams);
+    const [p, c] = await Promise.all([
+      getChartPayload(season),
+      getCandlePayload(season),
+    ]);
+    payload = p;
+    // Align candle team sorting to match payload standings (avoiding cached object mutation)
+    const teamOrder = new Map(payload.teams.map((t, idx) => [t, idx]));
+    const sortedTeams = [...c.teams].sort(
+      (a, b) => (teamOrder.get(a) ?? 0) - (teamOrder.get(b) ?? 0)
+    );
+    candles = { ...c, teams: sortedTeams };
   } catch {
     // DB unreachable during (re)generation — render an empty shell rather than
     // failing the build; the next revalidation will retry.

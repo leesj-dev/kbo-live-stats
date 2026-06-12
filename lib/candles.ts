@@ -30,22 +30,27 @@ export type WinProbRow = {
   wpHigh: number; // %
   wpLow: number; // %
   wpClose: number; // %
+  series: number[]; // this team's win prob %, one point per plate appearance
+  innings: number[]; // inning number per point (aligned to series)
+  teamScore?: number | null;
+  opponentScore?: number | null;
 };
 
 export type Candle = {
   game: number; // 1-based game number for this team
   date: string; // YYYY-MM-DD
-  open: number; // OHLC in margin units [−1, +1]
-  high: number;
-  low: number;
-  close: number;
-  bullish: boolean; // close >= open  (team won / didn't lose)
+  bullish: boolean; // team won / didn't lose
   // Raw percentages kept for the hover tooltip ("꼬리값").
   wpOpen: number;
   wpHigh: number; // this team's peak win prob, %
-  wpLow: number; // this team's trough win prob, %  (= 100 − opponent's peak)
+  wpLow: number; // this team's trough win prob, %
   wpClose: number;
-  oppPeak: number; // opponent's peak win prob, % = 100 − wpLow
+  // Full win-probability path for the tooltip sparkline (x = plate appearance).
+  series: number[]; // this team's win prob % per plate appearance
+  innings: number[]; // inning number per point (aligned to series)
+  subGames?: Candle[]; // DH1, DH2, etc. when combined on date view
+  teamScore?: number | null;
+  opponentScore?: number | null;
 };
 
 export type CandlePayload = {
@@ -58,30 +63,24 @@ export type CandlePayload = {
   updatedAt: string; // ISO timestamp
 };
 
-// percent [0,100] → margin units [−1,+1]
-export const wpToValue = (pct: number) => (pct - 50) / 50;
-
 function compareRows(a: WinProbRow, b: WinProbRow): number {
   if (a.gameDate !== b.gameDate) return a.gameDate < b.gameDate ? -1 : 1;
   return a.gameId < b.gameId ? -1 : a.gameId > b.gameId ? 1 : 0;
 }
 
 function toCandle(row: WinProbRow, game: number): Candle {
-  const open = wpToValue(row.wpOpen);
-  const close = wpToValue(row.wpClose);
   return {
     game,
     date: row.gameDate,
-    open,
-    high: wpToValue(row.wpHigh),
-    low: wpToValue(row.wpLow),
-    close,
-    bullish: close >= open,
+    bullish: row.wpClose >= row.wpOpen,
     wpOpen: row.wpOpen,
     wpHigh: row.wpHigh,
     wpLow: row.wpLow,
     wpClose: row.wpClose,
-    oppPeak: 100 - row.wpLow,
+    series: row.series,
+    innings: row.innings,
+    teamScore: row.teamScore,
+    opponentScore: row.opponentScore,
   };
 }
 
@@ -108,14 +107,59 @@ export function buildCandlePayload(
   for (const [team, teamRows] of byTeamRows) {
     teamRows.sort(compareRows);
     const candles: Candle[] = [];
-    const ofDate = new Map<string, Candle>();
+    const dateGrouping = new Map<string, Candle[]>();
     teamRows.forEach((row, i) => {
       const candle = toCandle(row, i + 1);
       candles.push(candle);
-      ofDate.set(row.gameDate, candle); // last game of a date wins (doubleheaders)
+      const group = dateGrouping.get(row.gameDate) ?? [];
+      group.push(candle);
+      dateGrouping.set(row.gameDate, group);
       allDates.add(row.gameDate);
     });
     byGame[team] = candles;
+
+    const ofDate = new Map<string, Candle>();
+    for (const [date, group] of dateGrouping.entries()) {
+      if (group.length === 1) {
+        ofDate.set(date, group[0]);
+      } else {
+        // combine for doubleheader
+        const first = group[0];
+        const last = group[group.length - 1];
+        
+        let currentWp = first.wpOpen;
+        let maxWp = currentWp;
+        let minWp = currentWp;
+
+        for (const g of group) {
+          const hD = g.wpHigh - g.wpOpen;
+          const lD = g.wpLow - g.wpOpen;
+          const cD = g.wpClose - g.wpOpen;
+          
+          maxWp = Math.max(maxWp, currentWp + hD);
+          minWp = Math.min(minWp, currentWp + lD);
+          currentWp += cD;
+        }
+        
+        const wpOpen = first.wpOpen;
+        const wpHigh = maxWp;
+        const wpLow = minWp;
+        const wpClose = currentWp;
+        
+        ofDate.set(date, {
+          game: last.game,
+          date: first.date,
+          bullish: wpClose >= wpOpen,
+          wpOpen,
+          wpHigh,
+          wpLow,
+          wpClose,
+          series: [], // Sparklines are drawn per subGame in the tooltip instead
+          innings: [],
+          subGames: group,
+        });
+      }
+    }
     candleByDate.set(team, ofDate);
     maxGames = Math.max(maxGames, candles.length);
   }

@@ -14,7 +14,7 @@ config({ path: ".env.local" });
 
 import { writeFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { fetchWinProbabilities } from "../lib/winprob-scraper";
+import { fetchWinProbabilities } from "../lib/scraper";
 import type { WinProbRow } from "../lib/candles";
 import { REGULAR_SEASON_START_DATES } from "../lib/seasons";
 import { TEAM_NAMES } from "../lib/teams";
@@ -43,6 +43,33 @@ function mockExtremes(result: "w" | "l" | "d") {
   }
   const high = clamp(rnd(53, 92)); // the moment they led before losing
   return { wpOpen: open, wpHigh: Math.max(high, open), wpLow: clamp(rnd(0, 6)), wpClose: 0 };
+}
+
+// Build a plausible win-prob walk that starts at `open`, wanders, plants the
+// game's max at `high` and min at `low`, and lands on `close` — one point per
+// plate appearance across 9 innings (~9 PAs each). Used only by --mock so the
+// offline candle tooltip has a series to draw.
+function mockSeries(open: number, high: number, low: number, close: number) {
+  const innings = 9;
+  const perInning = 9;
+  const n = innings * perInning;
+  const series: number[] = [];
+  const inns: number[] = [];
+  const highAt = Math.floor(n * rnd(0.3, 0.7));
+  const lowAt = Math.floor(n * rnd(0.3, 0.7));
+  let prev = open;
+  for (let i = 0; i < n; i++) {
+    let v: number;
+    if (i === 0) v = open;
+    else if (i === n - 1) v = close;
+    else if (i === highAt) v = high;
+    else if (i === lowAt) v = low;
+    else v = clamp(Math.max(low, Math.min(high, prev + rnd(-8, 8))));
+    series.push(v);
+    inns.push(Math.floor(i / perInning) + 1);
+    prev = v;
+  }
+  return { series, innings: inns };
 }
 
 type ResultRow = { team: string; gameId: string; gameDate: string; result: "w" | "l" | "d" };
@@ -79,12 +106,16 @@ async function runMock(season: number) {
     await writeFile(path.join(dataDir, `${season}.json`), JSON.stringify(results));
     console.log(`· no results snapshot — wrote synthetic data/${season}.json (${results.length} rows)`);
   }
-  const wp: WinProbRow[] = results.map((r) => ({
-    team: r.team,
-    gameId: r.gameId,
-    gameDate: r.gameDate,
-    ...mockExtremes(r.result),
-  }));
+  const wp: WinProbRow[] = results.map((r) => {
+    const e = mockExtremes(r.result);
+    return {
+      team: r.team,
+      gameId: r.gameId,
+      gameDate: r.gameDate,
+      ...e,
+      ...mockSeries(e.wpOpen, e.wpHigh, e.wpLow, e.wpClose),
+    };
+  });
   await writeFile(path.join(dataDir, `${season}-winprob.json`), JSON.stringify(wp));
   console.log(`✓ wrote ${wp.length} mock win-prob rows → data/${season}-winprob.json`);
 }

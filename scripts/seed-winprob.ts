@@ -9,7 +9,7 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-import { fetchWinProbabilities } from "../lib/winprob-scraper";
+import { fetchWinProbabilities } from "../lib/scraper";
 import { upsertWinProb } from "../lib/data";
 import { REGULAR_SEASON_START_DATES, SEASONS } from "../lib/seasons";
 
@@ -44,7 +44,7 @@ async function seedSeason(season: number) {
 
 async function main() {
   const arg = process.argv[2];
-  const targets = arg ? [Number(arg)] : [...SEASONS].sort((a, b) => a - b);
+  const targets = arg ? [Number(arg)] : [...SEASONS].filter((s) => s >= 2024).sort((a, b) => a - b);
   for (const season of targets) {
     await seedSeason(season);
   }
