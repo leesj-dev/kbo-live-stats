@@ -41,7 +41,10 @@ export function useTooltipPosition(
     }
     posY = Math.max(4, Math.min(pH - h - 4, posY));
 
-    setStyle({ left: `${posX}px`, top: `${posY}px`, opacity: 1 });
+    const next = { left: `${Math.round(posX)}px`, top: `${Math.round(posY)}px`, opacity: 1 };
+    setStyle((prev) =>
+      prev.left === next.left && prev.top === next.top && prev.opacity === next.opacity ? prev : next,
+    );
   }, [vx, vy, view.W, view.H]);
 
   return { ref, style };

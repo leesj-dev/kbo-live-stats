@@ -24,17 +24,57 @@ export function useChartHover<P>({
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const stickyTeamRef = useRef<string | null>(null);
+  const pointerRef = useRef<{ mx: number; my: number } | null>(null);
+  const seriesRef = useRef(series);
+  const projectRef = useRef(project);
+  const narrowRef = useRef(narrow);
   const [hover, setHover] = useState<HoverPick<P> | null>(null);
 
-  const clear = useCallback(() => {
-    setHover(null);
-    stickyTeamRef.current = null;
-    onHighlight(null);
+  seriesRef.current = series;
+  projectRef.current = project;
+  narrowRef.current = narrow;
+
+  const clearHover = useCallback(() => {
+    setHover((prev) => (prev === null ? prev : null));
+    if (stickyTeamRef.current !== null) {
+      stickyTeamRef.current = null;
+      onHighlight(null);
+    }
   }, [onHighlight]);
 
+  const clearPointer = useCallback(() => {
+    pointerRef.current = null;
+    clearHover();
+  }, [clearHover]);
+
+  const syncHover = useCallback(
+    (mx: number, my: number) => {
+      const chosen = pickHoverPoint(seriesRef.current, projectRef.current, mx, my, stickyTeamRef.current, narrowRef.current);
+      if (chosen) {
+        setHover((prev) =>
+          prev && prev.team === chosen.team && prev.pt === chosen.pt && prev.px === chosen.px && prev.py === chosen.py
+            ? prev
+            : chosen,
+        );
+        if (stickyTeamRef.current !== chosen.team) {
+          onHighlight(chosen.team);
+        }
+        stickyTeamRef.current = chosen.team;
+      } else {
+        clearHover();
+      }
+    },
+    [onHighlight, clearHover],
+  );
+
   useEffect(() => {
-    clear();
-  }, [resetKey, clear]);
+    clearPointer();
+  }, [resetKey, clearPointer]);
+
+  useEffect(() => {
+    const pointer = pointerRef.current;
+    if (pointer) syncHover(pointer.mx, pointer.my);
+  }, [series, narrow, syncHover]);
 
   const onMove = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
@@ -44,17 +84,11 @@ export function useChartHover<P>({
       const mx = (e.clientX - rect.left) * scale;
       const my = (e.clientY - rect.top) * scale;
 
-      const chosen = pickHoverPoint(series, project, mx, my, stickyTeamRef.current, narrow);
-      if (chosen) {
-        setHover(chosen);
-        stickyTeamRef.current = chosen.team;
-        onHighlight(chosen.team);
-      } else {
-        clear();
-      }
+      pointerRef.current = { mx, my };
+      syncHover(mx, my);
     },
-    [series, project, viewWidth, narrow, onHighlight, clear],
+    [viewWidth, syncHover],
   );
 
-  return { svgRef, hover, onMove, onLeave: clear };
+  return { svgRef, hover, onMove, onLeave: clearPointer };
 }
