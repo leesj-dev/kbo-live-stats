@@ -14,13 +14,12 @@ const OUTCOME_COLOR: Record<Outcome, string> = {
 
 const pct = (v: number) => `${v.toFixed(1).replace(/\.0$/, "")}%`;
 
-// "12:8 승" (score known) or "50경기 승" (score missing); doubleheader games
-// get a "DH1 " / "DH2 " prefix instead of the game number.
-function resultText(g: Candle, prefix: string): string {
+// "12:8 승" (score known) or "50경기 승" (score missing).
+function resultText(g: Candle): string {
   const label = OUTCOME_LABEL[candleOutcome(g.wpClose)];
   return g.teamScore != null && g.opponentScore != null
-    ? `${prefix}${g.teamScore}:${g.opponentScore} ${label}`
-    : `${prefix || `${g.game}경기 `}${label}`;
+    ? `${g.teamScore}:${g.opponentScore} ${label}`
+    : `${g.game}경기 ${label}`;
 }
 
 // Win-probability path inside the tooltip (0–100%), with inning separators.
@@ -195,7 +194,7 @@ export function CandleTooltip({
             className="text-[14px] font-bold"
             style={{ color: OUTCOME_COLOR[candleOutcome(games[0].wpClose)] }}
           >
-            {resultText(games[0], "")}
+            {resultText(games[0])}
           </span>
         )}
       </div>
@@ -206,12 +205,13 @@ export function CandleTooltip({
           className={idx > 0 ? "mt-1.5 border-t border-[var(--color-line)] pt-1.5 flex flex-col gap-1" : "flex flex-col gap-1"}
         >
           {games.length > 1 && (
-            <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="mb-0.5 flex items-center justify-between gap-6">
+              <span className="text-[14px] font-bold text-white">{`DH${idx + 1}`}</span>
               <span
                 className="text-[14px] font-bold"
                 style={{ color: OUTCOME_COLOR[candleOutcome(g.wpClose)] }}
               >
-                {resultText(g, `DH${idx + 1} `)}
+                {resultText(g)}
               </span>
             </div>
           )}

@@ -4,17 +4,11 @@ import { useCallback, useMemo } from "react";
 import { candleOutcome, type Candle, type CandlePayload } from "@/lib/candles";
 import type { ChartPayload } from "@/lib/stats";
 import { TEAM_COLORS } from "@/lib/teams";
-import {
-  buildXTicks,
-  buildYTicks,
-  chartGeometry,
-  computeYDomain,
-  type XAxis,
-  type YAxis,
-} from "@/lib/chart";
+import { buildXTicks, buildYTicks, chartGeometry, computeYDomain, type XAxis, type YAxis } from "@/lib/chart";
 import { ChartAxes, HoverMarker, SeriesEndLabel } from "./ChartElements";
 import { CandleTooltip } from "./CandleTooltip";
 import { useChartHover } from "./useChartHover";
+import { useSmoothedDomain } from "./useSmoothedDomain";
 
 type Point = {
   x: number;
@@ -88,11 +82,7 @@ function appendCandlePoints(opts: {
   const k = games.filter((g) => candleOutcome(g.wpClose) !== "d").length;
   const decided = prev.wins + prev.losses + k;
   const mapPct = (pctValue: number) =>
-    yAxis === "margin"
-      ? prev.margin - k + (pctValue / 100) * (2 * k)
-      : decided > 0
-        ? (prev.wins + k * (pctValue / 100)) / decided
-        : 0;
+    yAxis === "margin" ? prev.margin - k + (pctValue / 100) * (2 * k) : decided > 0 ? (prev.wins + k * (pctValue / 100)) / decided : 0;
 
   // Merge doubleheader series into one path across the slot.
   const allWp = games.flatMap((g) => g.series);
@@ -135,14 +125,7 @@ function appendCandlePoints(opts: {
   }
 }
 
-function buildSeriesList(
-  candles: CandlePayload,
-  visibleTeams: string[],
-  xAxis: XAxis,
-  yAxis: YAxis,
-  rMin: number,
-  rMax: number,
-): Series[] {
+function buildSeriesList(candles: CandlePayload, visibleTeams: string[], xAxis: XAxis, yAxis: YAxis, rMin: number, rMax: number): Series[] {
   const list: Series[] = [];
 
   for (const team of visibleTeams) {
@@ -243,36 +226,39 @@ export function DetailChart({
 
   const [rMin, rMax] = xRange;
 
-  const visibleTeams = useMemo(
-    () => candles.teams.filter((t) => !hidden.has(t)),
-    [candles.teams, hidden],
-  );
+  const visibleTeams = useMemo(() => candles.teams.filter((t) => !hidden.has(t)), [candles.teams, hidden]);
+
+  // Quantize rMax to the next integer for expensive computations so they only
+  // recalculate when crossing a game/date boundary, not 60× per second.
+  // The actual float rMax is still used for x-axis scaling and line clipping.
+  const rMaxCeil = Math.ceil(rMax);
 
   // The y-domain follows the line chart's data so both modes share a scale.
-  const { yMin, yMax } = useMemo(
-    () => computeYDomain(payload, visibleTeams, xAxis, yAxis, rMin, rMax),
-    [payload, visibleTeams, xAxis, yAxis, rMin, rMax],
+  const rawDomain = useMemo(
+    () => computeYDomain(payload, visibleTeams, xAxis, yAxis, rMin, rMaxCeil),
+    [payload, visibleTeams, xAxis, yAxis, rMin, rMaxCeil],
   );
+  const { yMin, yMax } = useSmoothedDomain(rawDomain);
 
   const seriesList = useMemo(
-    () => buildSeriesList(candles, visibleTeams, xAxis, yAxis, rMin, rMax),
-    [candles, visibleTeams, xAxis, yAxis, rMin, rMax],
+    () => buildSeriesList(candles, visibleTeams, xAxis, yAxis, rMin, rMaxCeil),
+    [candles, visibleTeams, xAxis, yAxis, rMin, rMaxCeil],
   );
 
   const xMin = rMin - 1;
-  const xMax = rMax;
+  const xMax = rMax; // stable integer scale — no sub-frame coordinate jitter
   const sx = (x: number) => M.left + ((x - xMin) / (xMax - xMin || 1)) * innerW;
   const sy = (y: number) => M.top + (1 - (y - yMin) / (yMax - yMin || 1)) * innerH;
 
   const yTicks = useMemo(() => buildYTicks(yMin, yMax, yAxis), [yMin, yMax, yAxis]);
-  const xTicks = useMemo(
-    () => buildXTicks(xAxis, rMin, rMax, dates, narrow),
-    [xAxis, rMin, rMax, dates, narrow],
-  );
+  const xTicks = useMemo(() => buildXTicks(xAxis, rMin, rMax, dates, narrow), [xAxis, rMin, rMax, dates, narrow]);
 
   const linePath = useCallback(
-    (pts: Point[]) => pts.map((p, i) => `${i === 0 ? "M" : "L"}${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(" "),
-    [sx, sy],
+    (pts: Point[]) => {
+      const visiblePts = pts.filter((p) => p.x <= rMax);
+      return visiblePts.map((p, i) => `${i === 0 ? "M" : "L"}${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(" ");
+    },
+    [sx, sy, rMax],
   );
 
   const { svgRef, hover, onMove, onLeave } = useChartHover<Point>({
@@ -341,7 +327,7 @@ export function DetailChart({
                 d={linePath(s.pts)}
                 fill="none"
                 stroke={color}
-                strokeWidth={isHi ? 2.8 : 1.6}
+                strokeWidth={isHi ? (narrow ? 2.2 : 2.8) : narrow ? 1.2 : 1.6}
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 pathLength={animate ? 1 : undefined}

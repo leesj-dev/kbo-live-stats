@@ -16,6 +16,7 @@ import {
 import { ChartAxes, HoverMarker, SeriesEndLabel } from "./ChartElements";
 import { useChartHover } from "./useChartHover";
 import { useTooltipPosition } from "./useTooltipPosition";
+import { useSmoothedDomain } from "./useSmoothedDomain";
 
 type Pt = { x: number; y: number; date: string; game: number | null };
 type Series = { team: string; pts: Pt[] };
@@ -55,30 +56,58 @@ export function MarginChart({
     [payload.teams, hidden],
   );
 
-  const { yMin, yMax } = useMemo(
-    () => computeYDomain(payload, visibleTeams, xAxis, yAxis, rMin, rMax),
-    [payload, visibleTeams, xAxis, yAxis, rMin, rMax],
+  // Quantize rMax so yDomain only recalculates at integer boundaries.
+  const rMaxCeil = Math.ceil(rMax);
+
+  const rawDomain = useMemo(
+    () => computeYDomain(payload, visibleTeams, xAxis, yAxis, rMin, rMaxCeil),
+    [payload, visibleTeams, xAxis, yAxis, rMin, rMaxCeil],
   );
+  const { yMin, yMax } = useSmoothedDomain(rawDomain);
 
   const series = useMemo(() => {
     const out: Series[] = [];
     for (const team of visibleTeams) {
-      const pts: Pt[] = [];
+      // 1. Accumulate all candidate points
+      const allPts: Pt[] = [];
       if (xAxis === "game") {
         for (const p of payload.byGame[team] ?? []) {
-          if (p.game < rMin - 1 || p.game > rMax) continue;
           const y = yAxis === "margin" ? p.margin : p.winRate;
-          pts.push({ x: p.game, y, date: p.date, game: p.game });
+          allPts.push({ x: p.game, y, date: p.date, game: p.game });
         }
       } else {
         const arr = payload.byDate[team] ?? [];
         arr.forEach((p, i) => {
-          if (i < rMin - 1 || i > rMax) return;
           const v = yAxis === "margin" ? p.margin : p.winRate;
           if (v == null) return; // skip leading gap before first game
-          pts.push({ x: i, y: v, date: p.date, game: null });
+          allPts.push({ x: i, y: v, date: p.date, game: null });
         });
       }
+
+      // 2. Filter and interpolate the last point to draw a continuous line to rMax
+      const pts: Pt[] = [];
+      for (const p of allPts) {
+        if (p.x < rMin - 1) continue;
+        if (p.x <= rMax) {
+          pts.push(p);
+        } else {
+          // If the last added point exists, interpolate a point at rMax towards this next point
+          const p1 = pts[pts.length - 1];
+          if (p1 && rMax > p1.x) {
+            const dx = p.x - p1.x;
+            const pct = dx > 0 ? (rMax - p1.x) / dx : 0;
+            const interpolatedY = p1.y + (p.y - p1.y) * pct;
+            pts.push({
+              x: rMax,
+              y: interpolatedY,
+              date: p.date,
+              game: p.game,
+            });
+          }
+          break; // Stop after interpolating the end point
+        }
+      }
+
       if (pts.length) out.push({ team, pts });
     }
     return out;
@@ -150,7 +179,7 @@ export function MarginChart({
                 d={linePath(s.pts)}
                 fill="none"
                 stroke={color}
-                strokeWidth={isHi ? 3 : 1.9}
+                strokeWidth={isHi ? (narrow ? 2.4 : 3) : (narrow ? 1.4 : 1.9)}
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 pathLength={animate ? 1 : undefined}

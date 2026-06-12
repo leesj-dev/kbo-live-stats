@@ -66,8 +66,7 @@ export type CandlePayload = {
 // A close near 100% is a win and near 0% a loss; anything in between is a
 // draw (or, for combined doubleheader candles, an aggregate).
 export type Outcome = "w" | "l" | "d";
-export const candleOutcome = (wpClose: number): Outcome =>
-  wpClose >= 99 ? "w" : wpClose <= 1 ? "l" : "d";
+export const candleOutcome = (wpClose: number): Outcome => (wpClose >= 99 ? "w" : wpClose <= 1 ? "l" : "d");
 
 export function emptyCandlePayload(season: number): CandlePayload {
   return {
@@ -104,11 +103,7 @@ function toCandle(row: WinProbRow, game: number): Candle {
 
 // Teams are listed alphabetically here; lib/data.ts reorders them to match the
 // line chart's standings when serving the payload.
-export function buildCandlePayload(
-  season: number,
-  rows: WinProbRow[],
-  updatedAt: Date = new Date(),
-): CandlePayload {
+export function buildCandlePayload(season: number, rows: WinProbRow[], updatedAt: Date = new Date()): CandlePayload {
   const byTeamRows = new Map<string, WinProbRow[]>();
   for (const row of rows) {
     const list = byTeamRows.get(row.team) ?? [];

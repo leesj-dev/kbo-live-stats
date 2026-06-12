@@ -67,17 +67,27 @@ export function buildYTicks(yMin: number, yMax: number, yAxis: YAxis): number[] 
 
 export type XTick = { x: number; label: string };
 
-// Evenly spread integer ticks across [lo, hi], always including both ends.
-function spreadTicks(lo: number, hi: number, targetCount: number): number[] {
-  if (hi - lo + 1 <= targetCount) {
+// Place ticks at clean integer multiples (1, 2, 3, 5, 10, 15, 20, …) across
+// [lo, hi].  The step is chosen so the total count stays near `targetCount`.
+function niceStepTicks(lo: number, hi: number, targetCount: number): number[] {
+  const span = hi - lo;
+  if (span <= 0) return [lo];
+  if (span + 1 <= targetCount) {
     const all: number[] = [];
     for (let v = lo; v <= hi; v++) all.push(v);
     return all;
   }
-  const ticks = [lo];
-  const step = (hi - lo) / (targetCount - 1);
-  for (let i = 1; i < targetCount - 1; i++) ticks.push(Math.round(lo + i * step));
-  ticks.push(hi);
+  const rawStep = span / targetCount;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / mag;
+  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 3 ? 3 : norm <= 5 ? 5 : 10) * mag;
+  const niceStep = Math.max(1, Math.round(step));
+
+  const start = Math.ceil(lo / niceStep) * niceStep;
+  const ticks: number[] = [];
+  for (let v = start; v <= hi; v += niceStep) ticks.push(v);
+  // Always include the first tick if it's not already there
+  if (ticks.length === 0 || ticks[0] > lo) ticks.unshift(lo);
   return ticks;
 }
 
@@ -91,14 +101,17 @@ export function buildXTicks(
   narrow: boolean,
 ): XTick[] {
   if (xAxis === "game") {
-    return spreadTicks(rMin, rMax, narrow ? 6 : 12).map((t) => ({ x: t, label: String(t) }));
+    const intMax = Math.floor(rMax);
+    const tickTarget = narrow ? 6 : 16;
+    return niceStepTicks(rMin, intMax, tickTarget).map((t) => ({ x: t, label: String(t) }));
   }
   const n = dates.length;
   if (n === 0) return [];
   const lo = Math.max(0, Math.ceil(rMin - 1));
   const hi = Math.min(n - 1, Math.floor(rMax));
   if (hi <= lo) return [{ x: lo, label: fmtMonthDay(dates[lo]) }];
-  return spreadTicks(lo, hi, narrow ? 7 : 14).map((t) => ({ x: t, label: fmtMonthDay(dates[t]) }));
+  const tickTarget = narrow ? 7 : 16;
+  return niceStepTicks(lo, hi, tickTarget).map((t) => ({ x: t, label: fmtMonthDay(dates[t]) }));
 }
 
 // Y-axis domain over the visible teams within the zoom range. Both axes hug the
