@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { fetchGames } from "@/lib/scraper";
-import { upsertResults } from "@/lib/data";
+import { fetchWinProbabilities } from "@/lib/winprob-scraper";
+import { upsertResults, upsertWinProb } from "@/lib/data";
 import { LATEST_SEASON, REGULAR_SEASON_START_DATES } from "@/lib/seasons";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,19 @@ async function handle(req: Request) {
 
   const rows = await fetchGames(season, ymd, ymd);
   const inserted = await upsertResults(rows);
+
+  // Crawl the day's live win-probability paths for the candlestick chart. Kept
+  // best-effort: a failure here must not block the (already stored) results.
+  let wpFetched = 0;
+  let wpInserted = 0;
+  try {
+    const wpRows = await fetchWinProbabilities(season, ymd, ymd);
+    wpFetched = wpRows.length;
+    wpInserted = await upsertWinProb(season, wpRows);
+  } catch (err) {
+    console.error("win-prob crawl failed", err);
+  }
+
   // Regenerate every season page immediately (all share the /[season] route).
   revalidatePath("/[season]", "page");
 
@@ -53,6 +67,7 @@ async function handle(req: Request) {
     ymd,
     fetched: rows.length,
     inserted,
+    winProb: { fetched: wpFetched, inserted: wpInserted },
     latestSeason: LATEST_SEASON,
   });
 }

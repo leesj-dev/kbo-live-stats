@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
-import { getChartPayload } from "@/lib/data";
+import { getChartPayload, getCandlePayload } from "@/lib/data";
 import { SEASONS, isValidSeason } from "@/lib/seasons";
 import { Dashboard } from "@/components/Dashboard";
+import type { CandlePayload } from "@/lib/candles";
 
 // Statically generated per season, refreshed via ISR (background regeneration).
 // This is NOT SSR: pages are served as static HTML. They regenerate at most
@@ -26,8 +27,11 @@ export default async function SeasonPage({
   if (!Number.isInteger(season) || !isValidSeason(season)) notFound();
 
   let payload;
+  let candles: CandlePayload;
   try {
     payload = await getChartPayload(season);
+    // Candle order follows the line chart's standings so selections line up.
+    candles = await getCandlePayload(season, payload.teams);
   } catch {
     // DB unreachable during (re)generation — render an empty shell rather than
     // failing the build; the next revalidation will retry.
@@ -40,7 +44,16 @@ export default async function SeasonPage({
       byDate: {},
       updatedAt: new Date().toISOString(),
     };
+    candles = {
+      season,
+      teams: [],
+      dates: [],
+      maxGames: 0,
+      byGame: {},
+      byDate: {},
+      updatedAt: payload.updatedAt,
+    };
   }
 
-  return <Dashboard payload={payload} seasons={SEASONS} />;
+  return <Dashboard payload={payload} candles={candles} seasons={SEASONS} />;
 }

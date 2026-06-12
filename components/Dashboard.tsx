@@ -3,9 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ChartPayload } from "@/lib/stats";
+import type { CandlePayload } from "@/lib/candles";
 import { TEAM_COLORS } from "@/lib/teams";
 import { MarginChart, chartGeometry, type XAxis, type YAxis } from "./MarginChart";
+import { CandleChart } from "./CandleChart";
 import { RangeSlider } from "./RangeSlider";
+
+type ChartKind = "line" | "candle";
 
 function Segmented<T extends string>({
   value,
@@ -146,11 +150,28 @@ function SeasonDropdown({ seasons, current }: { seasons: number[]; current: numb
   );
 }
 
-export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons: number[] }) {
+export function Dashboard({
+  payload,
+  candles,
+  seasons,
+}: {
+  payload: ChartPayload;
+  candles: CandlePayload;
+  seasons: number[];
+}) {
+  const [chartKind, setChartKind] = useState<ChartKind>("line");
   const [xAxis, setXAxis] = useState<XAxis>("date");
   const [yAxis, setYAxis] = useState<YAxis>("margin");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [highlight, setHighlight] = useState<string | null>(null);
+  // Candle mode is single-ticker, like a stock chart: one team at a time.
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
+
+  const isCandle = chartKind === "candle";
+  const hasCandleData = candles.teams.length > 0;
+  // Resolve the candle team: explicit pick, else best-ranked team with data.
+  const candleTeam =
+    selectedTeam && candles.teams.includes(selectedTeam) ? selectedTeam : candles.teams[0] ?? null;
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(960);
@@ -162,15 +183,17 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
     return () => ro.disconnect();
   }, []);
 
-  // X-axis window, tracked separately per axis mode. Defaults to the full season.
-  const dateMaxIdx = Math.max(0, payload.dates.length - 1);
-  const gameMax = Math.max(1, payload.maxGames);
+  // The active dataset drives the x-axis bounds and date labels (line vs candle
+  // can span different dates when win-prob data is partial).
+  const activeDates = isCandle ? candles.dates : payload.dates;
+  const dateMaxIdx = Math.max(0, activeDates.length - 1);
+  const gameMax = Math.max(1, isCandle ? candles.maxGames : payload.maxGames);
   const [dateRange, setDateRange] = useState<[number, number]>([0, dateMaxIdx]);
   const [gameRange, setGameRange] = useState<[number, number]>([1, gameMax]);
   useEffect(() => {
     setDateRange([0, dateMaxIdx]);
     setGameRange([1, gameMax]);
-  }, [payload.season, dateMaxIdx, gameMax]);
+  }, [payload.season, chartKind, dateMaxIdx, gameMax]);
 
   const isGame = xAxis === "game";
   const range = isGame ? gameRange : dateRange;
@@ -179,16 +202,22 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
   const sliderMax = isGame ? gameMax : dateMaxIdx;
   const fmtRange = (v: number) => {
     if (isGame) return `${v}경기`;
-    const d = payload.dates[v] ?? payload.dates[payload.dates.length - 1];
+    const d = activeDates[v] ?? activeDates[activeDates.length - 1];
     return d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : "—";
   };
 
-  const toggleTeam = (team: string) =>
+  // Sidebar click: line mode toggles a line on/off; candle mode picks the ticker.
+  const onTeamClick = (team: string) => {
+    if (isCandle) {
+      if (candles.teams.includes(team)) setSelectedTeam(team);
+      return;
+    }
     setHidden((prev) => {
       const next = new Set(prev);
       next.has(team) ? next.delete(team) : next.add(team);
       return next;
     });
+  };
 
   const hasData = payload.teams.length > 0;
 
@@ -227,6 +256,15 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
 
       <div className="mt-7 flex flex-wrap items-end gap-x-8 gap-y-4">
         <Segmented
+          label="차트"
+          value={chartKind}
+          onChange={setChartKind}
+          options={[
+            { value: "line", label: "라인" },
+            { value: "candle", label: "캔들" },
+          ]}
+        />
+        <Segmented
           label="가로축"
           value={xAxis}
           onChange={setXAxis}
@@ -235,15 +273,32 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
             { value: "game", label: "경기별" },
           ]}
         />
-        <Segmented
-          label="세로축"
-          value={yAxis}
-          onChange={setYAxis}
-          options={[
-            { value: "margin", label: "승패마진" },
-            { value: "winRate", label: "승률" },
-          ]}
-        />
+        {!isCandle && (
+          <Segmented
+            label="세로축"
+            value={yAxis}
+            onChange={setYAxis}
+            options={[
+              { value: "margin", label: "승패마진" },
+              { value: "winRate", label: "승률" },
+            ]}
+          />
+        )}
+        {isCandle && candleTeam && (
+          <div className="flex flex-col gap-[5px]">
+            <span className="font-mono text-[12px] uppercase tracking-wider text-[var(--color-muted)] ml-1">
+              팀
+            </span>
+            <div className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] px-3.5 py-1.5">
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ background: TEAM_COLORS[candleTeam] }}
+              />
+              <span className="text-[13px] font-medium text-[var(--color-fg)]">{candleTeam}</span>
+              <span className="text-[11px] text-[var(--color-muted)]">우측에서 선택</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_192px]">
@@ -252,7 +307,43 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
           className="animate-rise rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)]/60 p-3 sm:p-4"
           style={{ animationDelay: "0.08s" }}
         >
-          {hasData ? (
+          {isCandle ? (
+            hasCandleData && candleTeam ? (
+              <>
+                <CandleChart
+                  candles={candles}
+                  team={candleTeam}
+                  xAxis={xAxis}
+                  width={width}
+                  xRange={range}
+                />
+                <div
+                  className="mt-1"
+                  style={{
+                    paddingLeft: chartGeometry(width).M.left,
+                    paddingRight: chartGeometry(width).M.right,
+                  }}
+                >
+                  <RangeSlider
+                    min={sliderMin}
+                    max={sliderMax}
+                    value={range}
+                    onChange={setRange}
+                    format={fmtRange}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex h-[360px] flex-col items-center justify-center gap-2 text-center">
+                <span className="text-[var(--color-muted)]">
+                  {payload.season} 시즌 승리확률 데이터가 아직 없습니다.
+                </span>
+                <span className="text-[12px] text-[var(--color-faint)]">
+                  자정 크롤링이 누적되면 캔들차트가 표시됩니다.
+                </span>
+              </div>
+            )
+          ) : hasData ? (
             <>
               <MarginChart
                 payload={payload}
@@ -291,22 +382,30 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
           className="animate-rise rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)]/60 p-3"
           style={{ animationDelay: "0.12s" }}
         >
-          <div className="mb-2 px-1">
+          <div className="mb-2 flex items-baseline justify-between px-1">
             <span className="text-[16px] font-semibold text-[var(--color-fg)]">순위</span>
+            {isCandle && (
+              <span className="text-[10px] tracking-wide text-[var(--color-faint)]">팀 선택</span>
+            )}
           </div>
           <ul className="scroll-thin flex flex-col gap-0.5">
             {standings.map((s, i) => {
-              const off = hidden.has(s.team);
-              const hi = highlight === s.team;
+              const noData = isCandle && !candles.teams.includes(s.team);
+              const selected = isCandle && candleTeam === s.team;
+              const off = isCandle ? noData : hidden.has(s.team);
+              const hi = isCandle ? selected : highlight === s.team;
               return (
                 <li key={s.team}>
                   <button
-                    onClick={() => toggleTeam(s.team)}
-                    onPointerEnter={() => setHighlight(s.team)}
-                    onPointerLeave={() => setHighlight(null)}
+                    onClick={() => onTeamClick(s.team)}
+                    onPointerEnter={() => !isCandle && setHighlight(s.team)}
+                    onPointerLeave={() => !isCandle && setHighlight(null)}
+                    disabled={noData}
                     className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
                       hi ? "bg-[var(--color-panel-2)]" : "hover:bg-[var(--color-panel-2)]/60"
-                    } ${off ? "opacity-40" : ""}`}
+                    } ${selected ? "shadow-[inset_0_0_0_1px_var(--color-line-strong)]" : ""} ${
+                      off ? "opacity-40" : ""
+                    } ${noData ? "cursor-not-allowed" : ""}`}
                   >
                     <span className="w-4 font-mono text-[12px] font-medium tabular-nums text-[var(--color-muted)]">{i + 1}</span>
                     <span
