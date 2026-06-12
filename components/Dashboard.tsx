@@ -334,7 +334,18 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
       </div>
       <footer>
         <div className="mt-10 flex flex-col items-center gap-2 text-center text-sm text-[var(--color-muted)]">
-          <span>© 2026 leesj-dev</span>
+          <span>
+            © 2026&nbsp;
+            <a
+              href="https://github.com/leesj-dev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:no-underline"
+            >
+              leesj-dev
+            </a>
+            . All rights reserved.
+          </span>
         </div>
       </footer>
     </main>
