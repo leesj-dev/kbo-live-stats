@@ -17,7 +17,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "KBO 승패마진 현황",
+  title: "오늘의 승패마진",
   description: "KBO 리그 10개 구단의 승패마진과 승률을 날짜별·경기별로 확인할 수 있는 웹사이트입니다.",
 };
 

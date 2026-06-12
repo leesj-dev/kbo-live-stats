@@ -207,7 +207,7 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
   );
 
   const updated = new Date(payload.updatedAt);
-  const updatedLabel = `${updated.getFullYear()}.${String(updated.getMonth() + 1).padStart(2, "0")}.${String(updated.getDate()).padStart(2, "0")}.`;
+  const updatedLabel = `${updated.getFullYear()}-${String(updated.getMonth() + 1).padStart(2, "0")}-${String(updated.getDate()).padStart(2, "0")}`;
 
   return (
     <main className="mx-auto w-full max-w-7xl px-5 pb-20 pt-8 sm:px-8">
@@ -292,7 +292,7 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
           style={{ animationDelay: "0.12s" }}
         >
           <div className="mb-2 px-1">
-            <span className="text-[16px] font-semibold tracking-[0.05em] text-[var(--color-fg)]">순위</span>
+            <span className="text-[16px] font-semibold text-[var(--color-fg)]">순위</span>
           </div>
           <ul className="scroll-thin flex flex-col gap-0.5">
             {standings.map((s, i) => {
@@ -332,6 +332,11 @@ export function Dashboard({ payload, seasons }: { payload: ChartPayload; seasons
           </ul>
         </aside>
       </div>
+      <footer>
+        <div className="mt-10 flex flex-col items-center gap-2 text-center text-sm text-[var(--color-muted)]">
+          <span>© 2026 leesj-dev</span>
+        </div>
+      </footer>
     </main>
   );
 }

@@ -257,7 +257,7 @@ export function MarginChart({
           <text
             key={`x${i}`}
             x={sx(t.x)}
-            y={H - M.bottom + 17}
+            y={H - M.bottom + 24}
             textAnchor="middle"
             className="tnum"
             fontFamily="var(--font-sans)"
