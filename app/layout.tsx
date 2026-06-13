@@ -5,6 +5,7 @@ import { IBM_Plex_Mono } from "next/font/google";
 // renders. Next copies the woff2 files into /_next/static at build time.
 import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 
 // Served from /_next/static as well — next/font downloads at build time.
 const plexMono = IBM_Plex_Mono({
@@ -25,7 +26,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="ko"
       className={plexMono.variable}
     >
-      <body className="min-h-dvh antialiased">{children}</body>
+      <body className="min-h-dvh antialiased">
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
