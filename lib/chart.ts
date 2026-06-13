@@ -21,19 +21,16 @@ export const fmtRate = (v: number) => v.toFixed(3).replace(/^0/, "");
 export const fmtSigned = (v: number) => (v > 0 ? `+${v}` : String(v));
 
 // "2025-04-05" → "4/5"
-export const fmtMonthDay = (iso: string) =>
-  `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
+export const fmtMonthDay = (iso: string) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
 
-export const fmtYTick = (t: number, yAxis: YAxis) =>
-  yAxis === "margin" ? fmtSigned(t) : fmtRate(t);
+export const fmtYTick = (t: number, yAxis: YAxis) => (yAxis === "margin" ? fmtSigned(t) : fmtRate(t));
 
 // Shared so the range slider can align its track exactly to the plot area
 // (left edge = y-axis, right edge = line ends).
 export function chartGeometry(width: number) {
   const W = Math.max(width, 300);
   const narrow = W < 520;
-  // Left and right kept equal so the plot (and the slider aligned to it) is
-  // symmetric; the left side still fits the widest y-axis label (e.g. "+50").
+  // Left and right kept equal so the plot (and the slider aligned to it) is symmetric; the left side still fits the widest y-axis label (e.g. "+50").
   const M = {
     top: 22,
     right: narrow ? 34 : 40,
@@ -60,9 +57,7 @@ export function niceTicks(min: number, max: number, count: number): number[] {
 
 // Margin ticks must land on whole games; win rate gets the plain nice scale.
 export function buildYTicks(yMin: number, yMax: number, yAxis: YAxis): number[] {
-  return yAxis === "margin"
-    ? niceTicks(yMin, yMax, 8).filter((t) => Number.isInteger(t))
-    : niceTicks(yMin, yMax, 6);
+  return yAxis === "margin" ? niceTicks(yMin, yMax, 8).filter((t) => Number.isInteger(t)) : niceTicks(yMin, yMax, 6);
 }
 
 export type XTick = { x: number; label: string };
@@ -93,13 +88,7 @@ function niceStepTicks(lo: number, hi: number, targetCount: number): number[] {
 
 // X-axis ticks for the current zoom range: game numbers on the game axis,
 // "M/D" date labels (indexes into `dates`) on the date axis.
-export function buildXTicks(
-  xAxis: XAxis,
-  rMin: number,
-  rMax: number,
-  dates: string[],
-  narrow: boolean,
-): XTick[] {
+export function buildXTicks(xAxis: XAxis, rMin: number, rMax: number, dates: string[], narrow: boolean): XTick[] {
   if (xAxis === "game") {
     const intMax = Math.floor(rMax);
     const tickTarget = narrow ? 6 : 16;
@@ -153,7 +142,11 @@ export function computeYDomain(
     yHi = 1;
   }
   if (yAxis === "margin") {
-    const pad = Math.max(Math.ceil((yHi - yLo) * 0.12), 1);
+    // Small headroom above/below the data. Kept tight so the axis hugs the
+    // visible range; the min of 2 still covers the detail chart's intra-game
+    // win-probability overshoot (a line can briefly swing ±k past its closing
+    // margin within a slot).
+    const pad = Math.max(Math.round((yHi - yLo) * 0.06), 2);
     yLo -= pad;
     yHi += pad;
     // Guarantee a minimum visible span so a tightly-bunched field isn't a flat line.

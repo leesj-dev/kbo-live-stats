@@ -76,8 +76,9 @@ function appendCandlePoints(opts: {
   yAxis: YAxis;
   rMin: number;
   rMax: number;
+  maxPtsPerSlot: number; // cap on points emitted per slot (≈ 1 per pixel)
 }) {
-  const { pts, team, candle, games, xStart, gameNo, prev, yAxis, rMin, rMax } = opts;
+  const { pts, team, candle, games, xStart, gameNo, prev, yAxis, rMin, rMax, maxPtsPerSlot } = opts;
 
   const k = games.filter((g) => candleOutcome(g.wpClose) !== "d").length;
   const decided = prev.wins + prev.losses + k;
@@ -91,7 +92,16 @@ function appendCandlePoints(opts: {
 
   if (n >= 2) {
     const smoothed = smoothSeries(allWp, 11);
-    for (let p = 0; p < n; p++) {
+    // Decimate to roughly screen resolution. A smoothed line needs at most ~1
+    // vertex per horizontal pixel, but a per-pitch series packs 100+ samples
+    // into a slot that may be only a few pixels wide. Keeping the original
+    // density made the total vertex count grow with the visible range, so
+    // playback got progressively heavier (the late-segment stutter). Capping
+    // per-slot points keeps the total ≈ chart width regardless of zoom, with
+    // no visible change — and zooming in raises the cap so detail returns.
+    const keep = Math.min(n, Math.max(2, maxPtsPerSlot));
+    for (let i = 0; i < keep; i++) {
+      const p = keep === n ? i : Math.round((i * (n - 1)) / (keep - 1));
       const x = xStart + (p + 1) / n;
       if (x < rMin - 1 || x > rMax + 1) continue;
       pts.push({
@@ -125,7 +135,15 @@ function appendCandlePoints(opts: {
   }
 }
 
-function buildSeriesList(candles: CandlePayload, visibleTeams: string[], xAxis: XAxis, yAxis: YAxis, rMin: number, rMax: number): Series[] {
+function buildSeriesList(
+  candles: CandlePayload,
+  visibleTeams: string[],
+  xAxis: XAxis,
+  yAxis: YAxis,
+  rMin: number,
+  rMax: number,
+  maxPtsPerSlot: number,
+): Series[] {
   const list: Series[] = [];
 
   for (const team of visibleTeams) {
@@ -145,6 +163,7 @@ function buildSeriesList(candles: CandlePayload, visibleTeams: string[], xAxis: 
           yAxis,
           rMin,
           rMax,
+          maxPtsPerSlot,
         });
         applyOutcome(cum, c.wpClose);
       }
@@ -164,6 +183,7 @@ function buildSeriesList(candles: CandlePayload, visibleTeams: string[], xAxis: 
             yAxis,
             rMin,
             rMax,
+            maxPtsPerSlot,
           });
           for (const g of games) applyOutcome(cum, g.wpClose);
           lastPlayed = c;
@@ -238,11 +258,17 @@ export function DetailChart({
     () => computeYDomain(payload, visibleTeams, xAxis, yAxis, rMin, rMaxCeil),
     [payload, visibleTeams, xAxis, yAxis, rMin, rMaxCeil],
   );
-  const { yMin, yMax } = useSmoothedDomain(rawDomain);
+  const { yMin, yMax } = useSmoothedDomain(rawDomain, `${xAxis}:${yAxis}:${payload.season}`);
+
+  // Cap points per slot to ~1 per horizontal pixel. The visible span widens as
+  // playback advances, so this keeps the total vertex count roughly constant
+  // (≈ chart width) instead of growing with the accumulated per-pitch samples.
+  const visibleSpan = Math.max(1, rMaxCeil - (rMin - 1));
+  const maxPtsPerSlot = Math.max(2, Math.ceil(innerW / visibleSpan));
 
   const seriesList = useMemo(
-    () => buildSeriesList(candles, visibleTeams, xAxis, yAxis, rMin, rMaxCeil),
-    [candles, visibleTeams, xAxis, yAxis, rMin, rMaxCeil],
+    () => buildSeriesList(candles, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot),
+    [candles, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot],
   );
 
   const xMin = rMin - 1;
@@ -253,10 +279,36 @@ export function DetailChart({
   const yTicks = useMemo(() => buildYTicks(yMin, yMax, yAxis), [yMin, yMax, yAxis]);
   const xTicks = useMemo(() => buildXTicks(xAxis, rMin, rMax, dates, narrow), [xAxis, rMin, rMax, dates, narrow]);
 
-  const linePath = useCallback(
-    (pts: Point[]) => {
-      const visiblePts = pts.filter((p) => p.x <= rMax);
-      return visiblePts.map((p, i) => `${i === 0 ? "M" : "L"}${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(" ");
+  // Clip a series to the (continuous) rMax. Rather than stopping at the last
+  // data point ≤ rMax, we interpolate an endpoint exactly at rMax. On the date
+  // axis a rest day contributes only a single point per slot, so without this
+  // the line would freeze for a whole date unit and then jump when rMax crosses
+  // the next point. Interpolating keeps the line (and end label) advancing
+  // smoothly during playback. Returns the path and its interpolated endpoint.
+  const clipSeries = useCallback(
+    (pts: Point[]): { d: string; ex: number; ey: number } | null => {
+      const cmds: string[] = [];
+      let ex = NaN;
+      let ey = NaN;
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        if (p.x <= rMax) {
+          cmds.push(`${cmds.length === 0 ? "M" : "L"}${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`);
+          ex = p.x;
+          ey = p.y;
+        } else {
+          const prev = pts[i - 1];
+          if (prev && p.x !== prev.x) {
+            const t = (rMax - prev.x) / (p.x - prev.x);
+            ex = rMax;
+            ey = prev.y + (p.y - prev.y) * t;
+            cmds.push(`L${sx(ex).toFixed(1)} ${sy(ey).toFixed(1)}`);
+          }
+          break;
+        }
+      }
+      if (cmds.length === 0) return null;
+      return { d: cmds.join(" "), ex, ey };
     },
     [sx, sy, rMax],
   );
@@ -307,15 +359,10 @@ export function DetailChart({
           const isHi = highlight === s.team;
           const dim = highlight != null && !isHi;
 
-          // Last point still inside the visible x-range (points can spill past
-          // rMax by up to one slot for line continuity).
-          let last = s.pts[s.pts.length - 1];
-          for (let p = s.pts.length - 1; p >= 0; p--) {
-            if (s.pts[p].x <= rMax) {
-              last = s.pts[p];
-              break;
-            }
-          }
+          // Path clipped to the continuous rMax, with an interpolated endpoint
+          // so the line and its end label track smoothly during playback.
+          const clipped = clipSeries(s.pts);
+          if (!clipped) return null;
 
           return (
             <g
@@ -324,7 +371,7 @@ export function DetailChart({
               className="transition-opacity duration-150"
             >
               <path
-                d={linePath(s.pts)}
+                d={clipped.d}
                 fill="none"
                 stroke={color}
                 strokeWidth={isHi ? (narrow ? 2.2 : 2.8) : narrow ? 1.2 : 1.6}
@@ -342,18 +389,16 @@ export function DetailChart({
                     : undefined
                 }
               />
-              {last && (
-                <SeriesEndLabel
-                  x={sx(last.x)}
-                  y={sy(last.y)}
-                  color={color}
-                  team={s.team}
-                  highlighted={isHi}
-                  narrow={narrow}
-                  animate={animate}
-                  delay={0.9 + idx * 0.04}
-                />
-              )}
+              <SeriesEndLabel
+                x={sx(clipped.ex)}
+                y={sy(clipped.ey)}
+                color={color}
+                team={s.team}
+                highlighted={isHi}
+                narrow={narrow}
+                animate={animate}
+                delay={0.9 + idx * 0.04}
+              />
             </g>
           );
         })}

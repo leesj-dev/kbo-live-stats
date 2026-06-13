@@ -63,7 +63,7 @@ export function MarginChart({
     () => computeYDomain(payload, visibleTeams, xAxis, yAxis, rMin, rMaxCeil),
     [payload, visibleTeams, xAxis, yAxis, rMin, rMaxCeil],
   );
-  const { yMin, yMax } = useSmoothedDomain(rawDomain);
+  const { yMin, yMax } = useSmoothedDomain(rawDomain, `${xAxis}:${yAxis}:${payload.season}`);
 
   const series = useMemo(() => {
     const out: Series[] = [];

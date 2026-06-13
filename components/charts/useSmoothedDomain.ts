@@ -11,15 +11,25 @@ import { useRef } from "react";
  */
 export function useSmoothedDomain(
   target: { yMin: number; yMax: number },
+  /**
+   * Snap (instead of lerp) whenever this key changes. The lerp is driven by the
+   * stream of re-renders during playback/slider-drag; for a discrete
+   * reconfiguration (switching metric/axis/season) the domain jumps to an
+   * unrelated scale and there is no continuous render stream, so lerping would
+   * stall at a meaningless intermediate value. Snapping avoids that.
+   */
+  resetKey: string,
   /** Duration in ms for the domain to reach ~95% of its target. */
   duration = 150,
 ): { yMin: number; yMax: number } {
   const current = useRef<{ yMin: number; yMax: number } | null>(null);
   const lastTime = useRef<number>(0);
+  const keyRef = useRef(resetKey);
 
-  // First call — snap immediately, no animation.
-  if (current.current === null) {
+  // First call, or a discrete reconfiguration — snap immediately, no animation.
+  if (current.current === null || keyRef.current !== resetKey) {
     current.current = { ...target };
+    keyRef.current = resetKey;
     lastTime.current = performance.now();
     return { ...target };
   }

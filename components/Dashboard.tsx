@@ -175,8 +175,9 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
   const geo = chartGeometry(width);
 
   // Standings reflect the slider's right endpoint (cumulative season-to-date up
-  // to that game/date) using the real records, and are re-sorted by the visible
-  // metric so the rank numbers match the selected point in time.
+  // to that game/date) using the real records. Rank is always the official
+  // win-rate rank, and the list is always shown in that rank order — regardless
+  // of the chart's y-axis metric.
   const rangeHi = range[1];
   const endpointDate = isGame ? null : activeDates[Math.floor(rangeHi)];
   const standings = useMemo(() => {
@@ -217,20 +218,14 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
       rankMap.set(row.team, currentRank);
     });
 
-    // 2. Sort the rows for display according to the active yAxis metric
-    rows.sort((a, b) => {
-      const d = yAxis === "winRate" ? b.winRate - a.winRate : b.margin - a.margin;
-      if (d !== 0) return d;
-      const d2 = b.margin - a.margin; // tiebreak on the other metric
-      if (d2 !== 0) return d2;
-      return a.team.localeCompare(b.team);
-    });
-
-    return rows.map((row) => ({
+    // 2. Display in official rank order (win rate). A team with a higher 승패마진
+    // but a lower win rate still sits below in the standings, so the list order
+    // never depends on the chart's y-axis metric.
+    return sortedByWinRate.map((row) => ({
       ...row,
       rank: rankMap.get(row.team) ?? 1,
     }));
-  }, [payload, isGame, rangeHi, endpointDate, yAxis]);
+  }, [payload, isGame, rangeHi, endpointDate]);
 
   // Continuous FLIP: animate rows sliding to their new positions as the order
   // changes. The key for fast/repeated drags is to read each row's TRUE layout
