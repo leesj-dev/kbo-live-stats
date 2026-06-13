@@ -9,6 +9,7 @@
     "lint": "next lint",
     "seed": "tsx scripts/seed.ts",
     "seed:winprob": "tsx scripts/seed-winprob.ts",
+    "scrape:today": "tsx scripts/scrape-today.ts",
     "snapshot": "tsx scripts/snapshot.ts",
     "snapshot:winprob": "tsx scripts/snapshot-winprob.ts",
     "probe:winprob": "tsx scripts/probe-winprob.ts",

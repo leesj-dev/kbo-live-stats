@@ -57,7 +57,7 @@ export function niceTicks(min: number, max: number, count: number): number[] {
 
 // Margin ticks must land on whole games; win rate gets the plain nice scale.
 export function buildYTicks(yMin: number, yMax: number, yAxis: YAxis): number[] {
-  return yAxis === "margin" ? niceTicks(yMin, yMax, 8).filter((t) => Number.isInteger(t)) : niceTicks(yMin, yMax, 6);
+  return yAxis === "margin" ? niceTicks(yMin, yMax, 6).filter((t) => Number.isInteger(t)) : niceTicks(yMin, yMax, 6);
 }
 
 export type XTick = { x: number; label: string };
