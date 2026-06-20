@@ -390,7 +390,12 @@ export async function getLiveBoardData(requestedYmd?: string): Promise<{
   const navSet = new Set(dates);
   if (start && today >= start) navSet.add(dashed(today));
   const navDates = [...navSet].sort();
-  const ymd = requestedYmd ?? (dates.length ? dates[dates.length - 1].replace(/-/g, "") : today);
-  const games = await getDateGames(ymd);
+  const lastGameYmd = dates.length ? dates[dates.length - 1].replace(/-/g, "") : today;
+  const todayGames = requestedYmd ? [] : await getDateGames(today);
+  const hasStarted = todayGames.some((g) => g.status === "live" || g.status === "final");
+
+  const ymd = requestedYmd ?? (hasStarted ? today : lastGameYmd);
+  const games = ymd === today ? todayGames : await getDateGames(ymd);
+
   return { ymd, games, navDates, today };
 }

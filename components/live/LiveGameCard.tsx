@@ -413,6 +413,7 @@ function GameGraph({ c }: { c: Card }) {
           strokeWidth={1.6}
           strokeLinejoin="round"
           strokeLinecap="round"
+          style={{ transition: "d 0.5s cubic-bezier(0.4, 0, 0.2, 1)" }}
         />
         <path
           d={path(home)}
@@ -421,6 +422,7 @@ function GameGraph({ c }: { c: Card }) {
           strokeWidth={1.6}
           strokeLinejoin="round"
           strokeLinecap="round"
+          style={{ transition: "d 0.5s cubic-bezier(0.4, 0, 0.2, 1)" }}
         />
 
         {/* hovered plate marker */}
@@ -461,12 +463,14 @@ function GameGraph({ c }: { c: Card }) {
               cy={sy(away[n - 1])}
               r={2.6}
               fill={awayColor}
+              style={{ transition: "cx 0.5s cubic-bezier(0.4, 0, 0.2, 1), cy 0.5s cubic-bezier(0.4, 0, 0.2, 1)" }}
             />
             <circle
               cx={sx(n - 1)}
               cy={sy(home[n - 1])}
               r={2.6}
               fill={homeColor}
+              style={{ transition: "cx 0.5s cubic-bezier(0.4, 0, 0.2, 1), cy 0.5s cubic-bezier(0.4, 0, 0.2, 1)" }}
             />
           </>
         )}
