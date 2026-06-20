@@ -1,7 +1,7 @@
 import { CODE_TO_TEAM } from "./teams";
 import { dashed } from "./dates";
 import { listGames, naverHeaders, type ScheduleGame } from "./naver";
-import type { WinProbRow } from "./candles";
+import type { WinProbRow } from "./winprob";
 
 // ===========================================================================
 // Game Results Scraper
@@ -76,7 +76,7 @@ export async function fetchGames(
 // Naver's baseball game center renders a "승리확률" (win probability) line that
 // updates every plate appearance from the 1st inning to the 9th+. We crawl that
 // per-batter series for each finished game and reduce it to the four numbers a
-// candle needs (open / high / low / close), from each tracked team's view.
+// summary needs (open / high / low / close), from each tracked team's view.
 //
 // THE ENDPOINT (confirmed live against api-gw.sports.naver.com, 2026-06):
 // Naver serves the per-plate win-probability inside the text-relay feed, one
@@ -112,12 +112,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const jitter = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 const clampPct = (n: number) => Math.max(0, Math.min(100, n));
 
-type RelayPoint = { no: number; home: number; inn: number };
+export type RelayPoint = { no: number; home: number; inn: number };
 
 /**
  * Pull the valid home-win-probability points from a single relay-inning payload.
  */
-function extractInningPoints(json: unknown): RelayPoint[] {
+export function extractInningPoints(json: unknown): RelayPoint[] {
   const relays = (json as { result?: { textRelayData?: { textRelays?: unknown } } })?.result?.textRelayData?.textRelays;
   if (!Array.isArray(relays)) return [];
   const out: RelayPoint[] = [];
@@ -143,6 +143,43 @@ function extractInningPoints(json: unknown): RelayPoint[] {
 export function extractHomeWinProbSeries(json: unknown): number[] | null {
   const pts = extractInningPoints(json).sort((a, b) => a.no - b.no);
   return pts.length ? pts.map((p) => p.home) : null;
+}
+
+// Live game state pulled from a relay payload's `currentGameState`. Used by the
+// live scraper to compute remaining outs and show the current score.
+export type RelayGameState = { out: number; homeScore: number | null; awayScore: number | null };
+
+const toInt = (v: unknown): number | null => {
+  const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : NaN;
+  return Number.isFinite(n) ? n : null;
+};
+
+export function extractGameState(json: unknown): RelayGameState | null {
+  const gs = (json as { result?: { textRelayData?: { currentGameState?: unknown } } })?.result?.textRelayData?.currentGameState;
+  if (!gs || typeof gs !== "object") return null;
+  const g = gs as Record<string, unknown>;
+  return {
+    out: toInt(g.out) ?? 0,
+    homeScore: toInt(g.homeScore),
+    awayScore: toInt(g.awayScore),
+  };
+}
+
+/**
+ * Fetch a single relay inning: its valid win-probability points plus the current
+ * game state. One HTTP request — the building block for incremental live polling.
+ */
+export async function fetchRelayInning(gameId: string, inning: number): Promise<{ points: RelayPoint[]; state: RelayGameState | null }> {
+  const referer = `https://m.sports.naver.com/game/${gameId}`;
+  const base = WINPROB_CANDIDATES[0].path.replace("{id}", gameId);
+  try {
+    const res = await fetch(`${base}?inning=${inning}`, { headers: naverHeaders(referer), cache: "no-store" });
+    if (!res.ok) return { points: [], state: null };
+    const json = await res.json();
+    return { points: extractInningPoints(json), state: extractGameState(json) };
+  } catch {
+    return { points: [], state: null };
+  }
 }
 
 export type GameWinProb = {
@@ -215,7 +252,7 @@ function outcomePct(game: ScheduleGame, isHome: boolean): number {
 
 /**
  * Crawl live win probabilities for finished KBO regular-season games within
- * [fromYmd, toYmd] (inclusive, YYYYMMDD) and reduce each to per-team candle
+ * [fromYmd, toYmd] (inclusive, YYYYMMDD) and reduce each to per-team win-prob
  * inputs.
  */
 export async function fetchWinProbabilities(

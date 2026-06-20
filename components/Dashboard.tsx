@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChartPayload } from "@/lib/stats";
-import type { CandlePayload } from "@/lib/candles";
+import { mergeLiveGames, type WinProbPayload, type LiveGamePatch } from "@/lib/winprob";
+import type { LiveGameCard } from "@/lib/live";
 import { TEAM_COLORS } from "@/lib/teams";
 import { chartGeometry, fmtMonthDay, fmtRate, fmtSigned, NEGATIVE_COLOR, NEUTRAL_COLOR, POSITIVE_COLOR, type XAxis, type YAxis } from "@/lib/chart";
 import { MarginChart } from "./charts/MarginChart";
 import { DetailChart } from "./charts/DetailChart";
+import { LiveBadge } from "./LiveBadge";
 import { RangeSlider } from "./RangeSlider";
 import { Segmented } from "./Segmented";
 import { SeasonDropdown } from "./SeasonDropdown";
@@ -20,7 +22,7 @@ const DETAIL_MIN_SEASON = 2024;
 
 const signColor = (v: number) => (v > 0 ? POSITIVE_COLOR : v < 0 ? NEGATIVE_COLOR : NEUTRAL_COLOR);
 
-export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload; candles: CandlePayload; seasons: number[] }) {
+export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload; winProb: WinProbPayload; seasons: number[] }) {
   const [chartKind, setChartKind] = useState<ChartKind>("basic");
   const [xAxis, setXAxis] = useState<XAxis>("date");
   const [yAxis, setYAxis] = useState<YAxis>("margin");
@@ -55,10 +57,49 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
     return () => ro.disconnect();
   }, []);
 
+  // Live games: poll the day's slate so the LIVE badge and the detail-chart
+  // overlay stay current between server renders. The endpoint is edge-cached, so
+  // this stays cheap no matter how many tabs are open.
+  const [liveCards, setLiveCards] = useState<LiveGameCard[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/live", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { games?: LiveGameCard[] };
+        if (alive) setLiveCards(data.games ?? []);
+      } catch {
+        /* ignore transient poll errors */
+      }
+    };
+    load();
+    const id = setInterval(load, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  const liveCount = useMemo(() => liveCards.filter((g) => g.status === "live").length, [liveCards]);
+
+  // Expand each in-progress game into a per-team patch for the detail overlay.
+  const livePatches = useMemo<LiveGamePatch[]>(() => {
+    const out: LiveGamePatch[] = [];
+    for (const g of liveCards) {
+      if (g.status !== "live" || g.homeSeries.length < 1) continue;
+      out.push({ team: g.homeTeam, gameId: g.gameId, gameDate: g.gameDate, series: g.homeSeries, innings: g.innings, livePad: g.livePad });
+      out.push({ team: g.awayTeam, gameId: g.gameId, gameDate: g.gameDate, series: g.awaySeries, innings: g.innings, livePad: g.livePad });
+    }
+    return out;
+  }, [liveCards]);
+
+  const detailWinProb = useMemo(() => (livePatches.length ? mergeLiveGames(winProb, livePatches) : winProb), [winProb, livePatches]);
+
   // The active dataset drives the x-axis bounds and date labels.
-  const activeDates = isDetailed ? candles.dates : payload.dates;
+  const activeDates = isDetailed ? detailWinProb.dates : payload.dates;
   const dateMaxIdx = Math.max(0, activeDates.length - 1);
-  const gameMax = Math.max(1, isDetailed ? candles.maxGames : payload.maxGames);
+  const gameMax = Math.max(1, isDetailed ? detailWinProb.maxGames : payload.maxGames);
   const [dateRange, setDateRange] = useState<[number, number]>([0, dateMaxIdx]);
   const [gameRange, setGameRange] = useState<[number, number]>([1, gameMax]);
   // A new season is a fresh dataset — reset the zoom to the full extent.
@@ -171,7 +212,7 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
     });
   };
 
-  const hasActiveData = isDetailed ? candles.teams.length > 0 : payload.teams.length > 0;
+  const hasActiveData = isDetailed ? detailWinProb.teams.length > 0 : payload.teams.length > 0;
   const geo = chartGeometry(width);
 
   // Standings reflect the slider's right endpoint (cumulative season-to-date up
@@ -274,9 +315,12 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8">
       <header className="animate-rise relative z-30 flex flex-wrap items-start justify-between gap-3 sm:gap-6 border-b border-[var(--color-line)] pb-3">
-        <h1 className="mt-1 font-bold text-[34px] min-[490px]:text-5xl leading-[0.9] tracking-tight text-[var(--color-fg)]">
-          <span className="text-[var(--color-muted)] font-normal">오늘의</span> 승패마진
-        </h1>
+        <div className="flex flex-col items-start gap-2.5">
+          <h1 className="mt-1 font-bold text-[34px] min-[490px]:text-5xl leading-[0.9] tracking-tight text-[var(--color-fg)]">
+            <span className="text-[var(--color-muted)] font-normal">오늘의</span> 승패마진
+          </h1>
+          <LiveBadge liveCount={liveCount} />
+        </div>
 
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <SeasonDropdown
@@ -335,7 +379,7 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
             <>
               {isDetailed ? (
                 <DetailChart
-                  candles={candles}
+                  winProb={detailWinProb}
                   payload={payload}
                   xAxis={xAxis}
                   yAxis={yAxis}
@@ -437,7 +481,7 @@ export function Dashboard({ payload, candles, seasons }: { payload: ChartPayload
           </div>
           <ul className="scroll-thin flex flex-col gap-0.5">
             {standings.map((s, i) => {
-              const noData = isDetailed && !candles.teams.includes(s.team);
+              const noData = isDetailed && !detailWinProb.teams.includes(s.team);
               const off = hidden.has(s.team) || noData;
               const hi = highlight === s.team;
               return (

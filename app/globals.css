@@ -25,6 +25,7 @@ body {
   color: var(--color-fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss05";
 }
 
 /* Scoreboard atmosphere: dot grid + top glow + vignette + grain. */
@@ -34,17 +35,8 @@ body::before {
   inset: 0;
   z-index: -2;
   background:
-    radial-gradient(
-      120% 80% at 50% -10%,
-      rgba(244, 194, 13, 0.05),
-      transparent 60%
-    ),
-    radial-gradient(
-      100% 100% at 50% 120%,
-      rgba(255, 255, 255, 0.02),
-      transparent 55%
-    ),
-    linear-gradient(180deg, #18181b, #09090b 60%);
+    radial-gradient(120% 80% at 50% -10%, rgba(244, 194, 13, 0.05), transparent 60%),
+    radial-gradient(100% 100% at 50% 120%, rgba(255, 255, 255, 0.02), transparent 55%), linear-gradient(180deg, #18181b, #09090b 60%);
 }
 
 body::after {
@@ -53,8 +45,7 @@ body::after {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-image:
-    radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
   background-size: 22px 22px;
   mask-image: radial-gradient(120% 100% at 50% 0%, #000 40%, transparent 85%);
 }

@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { candleOutcome, type Candle, type CandlePayload } from "@/lib/candles";
+import { wpOutcome, type WpGame, type WinProbPayload } from "@/lib/winprob";
 import type { ChartPayload } from "@/lib/stats";
 import { TEAM_COLORS } from "@/lib/teams";
 import { buildXTicks, buildYTicks, chartGeometry, computeYDomain, type XAxis, type YAxis } from "@/lib/chart";
 import { ChartAxes, HoverMarker, SeriesEndLabel } from "./ChartElements";
-import { CandleTooltip } from "./CandleTooltip";
+import { WinProbTooltip } from "./WinProbTooltip";
 import { useChartHover } from "./useChartHover";
 import { useSmoothedDomain } from "./useSmoothedDomain";
 
@@ -18,7 +18,7 @@ type Point = {
   inning: number;
   game: number | null;
   date: string;
-  c: Candle;
+  c: WpGame;
   team: string;
 };
 
@@ -51,7 +51,7 @@ function smoothSeries(arr: number[], windowSize = 11): number[] {
 type CumState = { wins: number; losses: number; margin: number };
 
 function applyOutcome(state: CumState, wpClose: number) {
-  const outcome = candleOutcome(wpClose);
+  const outcome = wpOutcome(wpClose);
   if (outcome === "w") {
     state.wins++;
     state.margin++;
@@ -65,11 +65,11 @@ function applyOutcome(state: CumState, wpClose: number) {
 // a doubleheader — on the date axis). The win-probability percentages are mapped
 // onto the cumulative y-axis: with `k` decided games in the slot and the team at
 // `prev` beforehand, 100% counts all k as wins, 0% as losses, linear in between.
-function appendCandlePoints(opts: {
+function appendWpPoints(opts: {
   pts: Point[];
   team: string;
-  candle: Candle; // tooltip anchor (the combined candle on the date axis)
-  games: Candle[]; // sub-games making up this slot
+  wpGame: WpGame; // tooltip anchor (the combined game on the date axis)
+  games: WpGame[]; // sub-games making up this slot
   xStart: number; // left edge of the slot
   gameNo: number | null;
   prev: CumState; // cumulative state before this slot — read before mutating
@@ -78,9 +78,13 @@ function appendCandlePoints(opts: {
   rMax: number;
   maxPtsPerSlot: number; // cap on points emitted per slot (≈ 1 per pixel)
 }) {
-  const { pts, team, candle, games, xStart, gameNo, prev, yAxis, rMin, rMax, maxPtsPerSlot } = opts;
+  const { pts, team, wpGame, games, xStart, gameNo, prev, yAxis, rMin, rMax, maxPtsPerSlot } = opts;
 
-  const k = games.filter((g) => candleOutcome(g.wpClose) !== "d").length;
+  // An in-progress game counts toward `k` even though its provisional close sits
+  // in the draw band — otherwise its line would flatten to `prev.margin` instead
+  // of floating at the current win probability. Its win/loss is only *banked*
+  // (applyOutcome) once it finishes, so the cumulative state stays honest.
+  const k = games.filter((g) => g.live || wpOutcome(g.wpClose) !== "d").length;
   const decided = prev.wins + prev.losses + k;
   const mapPct = (pctValue: number) =>
     yAxis === "margin" ? prev.margin - k + (pctValue / 100) * (2 * k) : decided > 0 ? (prev.wins + k * (pctValue / 100)) / decided : 0;
@@ -89,6 +93,14 @@ function appendCandlePoints(opts: {
   const allWp = games.flatMap((g) => g.series);
   const allInnings = games.flatMap((g) => g.innings);
   const n = allWp.length;
+
+  // Reserve trailing space for a live game's minimum remaining plate appearances
+  // (≈ outs left). The played points fill `n / nTotal` of the slot and the line
+  // stops short of the right edge; an out fills one reserved slot (n+1, pad−1 →
+  // nTotal unchanged), a baserunner grows nTotal by one (slight recompression).
+  // Final games carry pad 0, so nTotal === n and the spacing is unchanged.
+  const padTotal = games.reduce((s, g) => s + (g.livePad ?? 0), 0);
+  const nTotal = n + padTotal;
 
   if (n >= 2) {
     const smoothed = smoothSeries(allWp, 11);
@@ -102,7 +114,7 @@ function appendCandlePoints(opts: {
     const keep = Math.min(n, Math.max(2, maxPtsPerSlot));
     for (let i = 0; i < keep; i++) {
       const p = keep === n ? i : Math.round((i * (n - 1)) / (keep - 1));
-      const x = xStart + (p + 1) / n;
+      const x = xStart + (p + 1) / nTotal;
       if (x < rMin - 1 || x > rMax + 1) continue;
       pts.push({
         x,
@@ -111,24 +123,24 @@ function appendCandlePoints(opts: {
         smoothWp: smoothed[p],
         inning: allInnings[p],
         game: gameNo,
-        date: candle.date,
-        c: candle,
+        date: wpGame.date,
+        c: wpGame,
         team,
       });
     }
   } else {
-    // Fallback for an empty or single-point series: one point at the slot end.
-    const x = xStart + 1;
+    // Fallback for an empty or single-point series: one point at the played edge.
+    const x = xStart + (n > 0 ? n / nTotal : 1);
     if (x >= rMin - 1 && x <= rMax + 1) {
       pts.push({
         x,
-        y: mapPct(candle.wpClose),
-        wp: candle.wpClose,
-        smoothWp: candle.wpClose,
+        y: mapPct(wpGame.wpClose),
+        wp: wpGame.wpClose,
+        smoothWp: wpGame.wpClose,
         inning: 9,
         game: gameNo,
-        date: candle.date,
-        c: candle,
+        date: wpGame.date,
+        c: wpGame,
         team,
       });
     }
@@ -136,7 +148,7 @@ function appendCandlePoints(opts: {
 }
 
 function buildSeriesList(
-  candles: CandlePayload,
+  winProb: WinProbPayload,
   visibleTeams: string[],
   xAxis: XAxis,
   yAxis: YAxis,
@@ -151,11 +163,11 @@ function buildSeriesList(
     const cum: CumState = { wins: 0, losses: 0, margin: 0 };
 
     if (xAxis === "game") {
-      for (const c of candles.byGame[team] ?? []) {
-        appendCandlePoints({
+      for (const c of winProb.byGame[team] ?? []) {
+        appendWpPoints({
           pts,
           team,
-          candle: c,
+          wpGame: c,
           games: [c],
           xStart: c.game - 1,
           gameNo: c.game,
@@ -168,14 +180,14 @@ function buildSeriesList(
         applyOutcome(cum, c.wpClose);
       }
     } else {
-      let lastPlayed: Candle | null = null;
-      (candles.byDate[team] ?? []).forEach((c, j) => {
+      let lastPlayed: WpGame | null = null;
+      (winProb.byDate[team] ?? []).forEach((c, j) => {
         if (c) {
           const games = c.subGames ?? [c];
-          appendCandlePoints({
+          appendWpPoints({
             pts,
             team,
-            candle: c,
+            wpGame: c,
             games,
             xStart: j - 1,
             gameNo: null,
@@ -189,7 +201,7 @@ function buildSeriesList(
           lastPlayed = c;
         } else if (lastPlayed && j >= rMin - 1 && j <= rMax + 1) {
           // Flat carry-over point for a day without a game, anchored to the
-          // last played candle so the tooltip still has something to show.
+          // last played game so the tooltip still has something to show.
           const decided = cum.wins + cum.losses;
           pts.push({
             x: j,
@@ -198,7 +210,7 @@ function buildSeriesList(
             smoothWp: lastPlayed.wpClose,
             inning: 9,
             game: null,
-            date: candles.dates[j],
+            date: winProb.dates[j],
             c: lastPlayed,
             team,
           });
@@ -215,7 +227,7 @@ function buildSeriesList(
 }
 
 export function DetailChart({
-  candles,
+  winProb,
   payload,
   xAxis,
   yAxis,
@@ -226,7 +238,7 @@ export function DetailChart({
   xRange,
   animate = true,
 }: {
-  candles: CandlePayload;
+  winProb: WinProbPayload;
   payload: ChartPayload;
   xAxis: XAxis;
   yAxis: YAxis;
@@ -237,7 +249,7 @@ export function DetailChart({
   xRange: [number, number];
   animate?: boolean;
 }) {
-  const dates = candles.dates;
+  const dates = winProb.dates;
 
   const geo = chartGeometry(width);
   const { W, narrow, M, H } = geo;
@@ -246,7 +258,7 @@ export function DetailChart({
 
   const [rMin, rMax] = xRange;
 
-  const visibleTeams = useMemo(() => candles.teams.filter((t) => !hidden.has(t)), [candles.teams, hidden]);
+  const visibleTeams = useMemo(() => winProb.teams.filter((t) => !hidden.has(t)), [winProb.teams, hidden]);
 
   // Quantize rMax to the next integer for expensive computations so they only
   // recalculate when crossing a game/date boundary, not 60× per second.
@@ -267,8 +279,8 @@ export function DetailChart({
   const maxPtsPerSlot = Math.max(2, Math.ceil(innerW / visibleSpan));
 
   const seriesList = useMemo(
-    () => buildSeriesList(candles, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot),
-    [candles, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot],
+    () => buildSeriesList(winProb, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot),
+    [winProb, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot],
   );
 
   const xMin = rMin - 1;
@@ -343,7 +355,7 @@ export function DetailChart({
         onPointerMove={onMove}
         onPointerLeave={onLeave}
         role="img"
-        aria-label={`${candles.season} KBO 승리확률 상세차트`}
+        aria-label={`${winProb.season} KBO 승리확률 상세차트`}
       >
         <ChartAxes
           geo={geo}
@@ -432,7 +444,7 @@ export function DetailChart({
       </svg>
 
       {hover && (
-        <CandleTooltip
+        <WinProbTooltip
           c={hover.pt.c}
           team={hover.team}
           color={TEAM_COLORS[hover.team]}

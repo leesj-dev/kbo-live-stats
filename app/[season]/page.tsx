@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
-import { getChartPayload, getCandlePayload } from "@/lib/data";
+import { getChartPayload, getWinProbPayload } from "@/lib/data";
 import { SEASONS, isValidSeason } from "@/lib/seasons";
 import { emptyChartPayload, type ChartPayload } from "@/lib/stats";
-import { emptyCandlePayload, type CandlePayload } from "@/lib/candles";
+import { emptyWinProbPayload, type WinProbPayload } from "@/lib/winprob";
 import { Dashboard } from "@/components/Dashboard";
 
 // Statically generated per season, refreshed via ISR (background regeneration).
@@ -28,17 +28,17 @@ export default async function SeasonPage({
   if (!Number.isInteger(season) || !isValidSeason(season)) notFound();
 
   let payload: ChartPayload;
-  let candles: CandlePayload;
+  let winProb: WinProbPayload;
   try {
     payload = await getChartPayload(season);
-    // Candle teams follow the line chart's standings so the sidebar lines up.
-    candles = await getCandlePayload(season, payload.teams);
+    // Win-prob teams follow the line chart's standings so the sidebar lines up.
+    winProb = await getWinProbPayload(season, payload.teams);
   } catch {
     // DB unreachable during (re)generation — render an empty shell rather than
     // failing the build; the next revalidation will retry.
     payload = emptyChartPayload(season);
-    candles = emptyCandlePayload(season);
+    winProb = emptyWinProbPayload(season);
   }
 
-  return <Dashboard payload={payload} candles={candles} seasons={SEASONS} />;
+  return <Dashboard payload={payload} winProb={winProb} seasons={SEASONS} />;
 }

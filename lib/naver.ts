@@ -34,10 +34,12 @@ export function naverHeaders(referer = "https://m.sports.naver.com/"): HeadersIn
 export type ScheduleGame = {
   gameId: string;
   gameDate: string; // YYYY-MM-DD
+  gameDateTime?: string; // "2026-06-19T18:30:00" (KST start), absent for some rows
   homeTeamCode: string;
   awayTeamCode: string;
   winner?: string; // HOME | AWAY | DRAW
-  statusCode?: string; // RESULT when finished
+  statusCode?: string; // STARTED while live, RESULT when finished
+  statusInfo?: string; // "10회말" while live, "경기종료" etc.
   cancel?: boolean;
   roundCode?: string; // kbo_r for regular season
   homeTeamScore?: number;
@@ -106,10 +108,12 @@ export async function listGames(
       out.push({
         gameId: g.gameId,
         gameDate: g.gameDate,
+        gameDateTime: g.gameDateTime,
         homeTeamCode: g.homeTeamCode ?? "",
         awayTeamCode: g.awayTeamCode ?? "",
         winner: g.winner,
         statusCode: g.statusCode,
+        statusInfo: g.statusInfo,
         cancel: g.cancel,
         roundCode: g.roundCode,
         homeTeamScore: g.homeTeamScore,

@@ -1,5 +1,5 @@
 /**
- * Backfill live win-probability extremes (candlestick inputs) into the database.
+ * Backfill live win-probability extremes (detail-chart inputs) into the database.
  *
  *   npm run seed:winprob -- 2025    # a single season
  *   npm run seed:winprob            # all seasons (2015 .. current)

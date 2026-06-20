@@ -50,7 +50,7 @@ async function handle(req: Request) {
   const rows = await fetchGames(season, activeFromYmd, toYmd);
   const inserted = await upsertResults(rows);
 
-  // Crawl the day's live win-probability paths for the candlestick chart. Kept
+  // Crawl the day's live win-probability paths for the detail chart. Kept
   // best-effort: a failure here must not block the (already stored) results.
   let wpFetched = 0;
   let wpInserted = 0;
@@ -67,7 +67,7 @@ async function handle(req: Request) {
 
   // Purge server-side query caches and regenerate every season page immediately.
   revalidateTag("chart-payload");
-  revalidateTag("candle-payload");
+  revalidateTag("winprob-payload");
   revalidatePath("/[season]", "page");
 
   return NextResponse.json({

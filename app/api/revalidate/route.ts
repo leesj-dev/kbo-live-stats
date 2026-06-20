@@ -19,9 +19,9 @@ function handle(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   revalidateTag("chart-payload");
-  revalidateTag("candle-payload");
+  revalidateTag("winprob-payload");
   revalidatePath("/[season]", "page");
-  return NextResponse.json({ ok: true, revalidated: ["chart-payload", "candle-payload", "/[season]"] });
+  return NextResponse.json({ ok: true, revalidated: ["chart-payload", "winprob-payload", "/[season]"] });
 }
 
 export async function POST(req: Request) {

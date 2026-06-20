@@ -1,13 +1,13 @@
 /**
  * Write a season's live win-probability extremes to data/<season>-winprob.json
- * for offline candlestick preview (no database needed). The app reads this
+ * for offline win-probability preview (no database needed). The app reads this
  * snapshot when DATABASE_URL is unset.
  *
  *   npm run snapshot:winprob -- 2025            # real crawl from Naver
  *   npm run snapshot:winprob -- 2025 --mock     # synthetic demo data (no network)
  *
  * The --mock mode also writes a matching data/<season>.json results snapshot if
- * one is missing, so the line chart and candle chart both have data to render.
+ * one is missing, so the line chart and detail chart both have data to render.
  */
 import { config } from "dotenv";
 config({ path: ".env.local" });
@@ -15,7 +15,7 @@ config({ path: ".env.local" });
 import { writeFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fetchWinProbabilities } from "../lib/scraper";
-import type { WinProbRow } from "../lib/candles";
+import type { WinProbRow } from "../lib/winprob";
 import { REGULAR_SEASON_START_DATES, seasonCrawlRange } from "../lib/seasons";
 import { TEAM_NAMES } from "../lib/teams";
 
@@ -43,7 +43,7 @@ function mockExtremes(result: "w" | "l" | "d") {
 // Build a plausible win-prob walk that starts at `open`, wanders, plants the
 // game's max at `high` and min at `low`, and lands on `close` — one point per
 // plate appearance across 9 innings (~9 PAs each). Used only by --mock so the
-// offline candle tooltip has a series to draw.
+// offline win-prob tooltip has a series to draw.
 function mockSeries(open: number, high: number, low: number, close: number) {
   const innings = 9;
   const perInning = 9;
