@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { revalidateTag, revalidatePath } from "next/cache";
 import { fetchLiveGames } from "@/lib/live";
-import { getWinProbRowsByDate, upsertLiveWinProb, upsertResults } from "@/lib/data";
-import { fetchGames } from "@/lib/scraper";
+import { getWinProbRowsByDate, upsertLiveWinProb, upsertResults, upsertWinProb } from "@/lib/data";
+import { fetchGames, fetchWinProbabilities } from "@/lib/scraper";
 import { REGULAR_SEASON_START_DATES } from "@/lib/seasons";
 import { kstYmd } from "@/lib/dates";
 
@@ -42,7 +42,7 @@ async function handle(req: Request) {
     status: r.status,
   }));
 
-  const { rows, liveCount, finishedCount } = await fetchLiveGames(season, today, prevRows);
+  const { rows, finishedCount, allFinishedToday } = await fetchLiveGames(season, today, prevRows);
 
   let upserted = 0;
   if (rows.length > 0) {
@@ -56,8 +56,21 @@ async function handle(req: Request) {
         const resultRows = await fetchGames(season, today, today);
         if (resultRows.length > 0) {
           await upsertResults(resultRows);
-          revalidateTag("chart-payload");
         }
+
+        if (allFinishedToday) {
+          try {
+            const wpRows = await fetchWinProbabilities(season, today, today);
+            if (wpRows.length > 0) {
+              await upsertWinProb(season, wpRows);
+            }
+          } catch (wpErr) {
+            console.error("Failed to run final integrity check scrape for win probabilities:", wpErr);
+          }
+        }
+
+        revalidateTag("chart-payload");
+        revalidateTag("winprob-payload");
       } catch (err) {
         console.error("Failed to fetch/upsert finished game results during live cron:", err);
       }
@@ -65,7 +78,7 @@ async function handle(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, today, season, liveCount, finishedCount, upserted });
+  return NextResponse.json({ ok: true, today, season, finishedCount, upserted });
 }
 
 export async function GET(req: Request) {

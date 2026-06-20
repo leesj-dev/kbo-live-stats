@@ -1,5 +1,5 @@
 // Transforms raw per-team game results into cumulative win-margin / win-rate
-// series, by game number and by date. Ported from main.py:98-194.
+// series, by game number and by date.
 
 export type StatRow = {
   team: string;
@@ -49,11 +49,7 @@ function compareRows(a: StatRow, b: StatRow): number {
   return a.gameId < b.gameId ? -1 : a.gameId > b.gameId ? 1 : 0;
 }
 
-export function buildChartPayload(
-  season: number,
-  rows: StatRow[],
-  updatedAt: Date = new Date(),
-): ChartPayload {
+export function buildChartPayload(season: number, rows: StatRow[], updatedAt: Date = new Date()): ChartPayload {
   const byTeamRows = new Map<string, StatRow[]>();
   for (const row of rows) {
     const list = byTeamRows.get(row.team) ?? [];
@@ -85,7 +81,7 @@ export function buildChartPayload(
         winRate: decided === 0 ? 0 : wins / decided,
       };
       points.push(point);
-      // Last game of a given date wins (aggfunc="last" in main.py).
+      // Last game of a given date wins
       endOfDate.set(row.gameDate, point);
       allDates.add(row.gameDate);
     });
@@ -114,7 +110,7 @@ export function buildChartPayload(
     });
   }
 
-  // Rank teams by final win rate (then margin, then name) — main.py ranking.
+  // Rank teams by final win rate (then margin, then name)
   const teams = [...byTeamRows.keys()].sort((a, b) => {
     const fa = byGame[a].at(-1);
     const fb = byGame[b].at(-1);

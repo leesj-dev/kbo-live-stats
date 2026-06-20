@@ -4,12 +4,12 @@ import { useRouter } from "next/navigation";
 import type { ChartPayload } from "@/lib/stats";
 import { type WinProbPayload } from "@/lib/winprob";
 import type { LiveGameCard } from "@/lib/live";
-import { TEAM_COLORS } from "@/lib/teams";
+import { TEAM_COLORS, getTeamShortName } from "@/lib/teams";
 import { dashed, kstYmd } from "@/lib/dates";
 import { chartGeometry, fmtMonthDay, fmtRate, fmtSigned, NEGATIVE_COLOR, NEUTRAL_COLOR, POSITIVE_COLOR, type XAxis, type YAxis } from "@/lib/chart";
 import { MarginChart } from "./charts/MarginChart";
 import { DetailChart } from "./charts/DetailChart";
-import { LiveBadge } from "./LiveBadge";
+import { SiteNav } from "./SiteNav";
 import { RangeSlider } from "./RangeSlider";
 import { Segmented } from "./Segmented";
 import { SeasonDropdown } from "./SeasonDropdown";
@@ -340,30 +340,11 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
     });
   }, [standingsOrderKey]);
 
-  const updatedLabel = payload.updatedAt.slice(0, 10);
-
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8">
-      <header className="animate-rise relative z-30 flex flex-wrap items-start justify-between gap-3 sm:gap-6 border-b border-[var(--color-line)] pb-3">
-        <div className="flex flex-col items-start gap-2.5">
-          <h1 className="mt-1 font-bold text-[34px] min-[490px]:text-5xl leading-[0.9] tracking-tight text-[var(--color-fg)]">
-            <span className="text-[var(--color-muted)] font-normal">오늘의</span> 승패마진
-          </h1>
-        </div>
+    <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
+      <SiteNav active="season" />
 
-        <div className="flex flex-col items-start gap-2 sm:items-end">
-          <SeasonDropdown
-            seasons={seasons}
-            current={payload.season}
-            chartKind={chartKind}
-            xAxis={xAxis}
-            yAxis={yAxis}
-          />
-          <span className="tracking-wide text-[11px] text-[var(--color-muted)]">최종 업데이트 {updatedLabel}</span>
-        </div>
-      </header>
-
-      <div className="mt-7 flex flex-wrap items-end gap-x-2 min-[406px]:gap-x-4 min-[438px]:gap-x-8 gap-y-4">
+      <div className="mt-5 flex flex-wrap items-end gap-x-2 min-[406px]:gap-x-3.5 min-[438px]:gap-x-4 gap-y-4">
         <Segmented
           label="차트"
           value={isDetailed ? "detailed" : "basic"}
@@ -396,6 +377,17 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
             { value: "winRate", label: "승률" },
           ]}
         />
+
+        {/* Season selector — pinned to the right end of the controls row (시즌 tab only). */}
+        <div className="order-first w-full min-[570px]:order-none min-[570px]:w-auto min-[570px]:ml-auto flex items-center justify-end gap-2.5">
+          <SeasonDropdown
+            seasons={seasons}
+            current={payload.season}
+            chartKind={chartKind}
+            xAxis={xAxis}
+            yAxis={yAxis}
+          />
+        </div>
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_192px]">
@@ -542,7 +534,7 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
                         boxShadow: off ? "none" : `0 0 6px ${TEAM_COLORS[s.team]}66`,
                       }}
                     />
-                    <span className="flex-1 truncate text-[13px] font-medium text-[var(--color-fg)]">{s.team}</span>
+                    <span className="flex-1 truncate text-[13px] font-medium text-[var(--color-fg)]">{getTeamShortName(s.team, payload.season)}</span>
                     <span
                       className="font-mono text-[12px] font-semibold tabular-nums"
                       style={{ color: signColor(yAxis === "winRate" ? s.winRate - 0.5 : s.margin) }}

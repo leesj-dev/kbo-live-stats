@@ -1,7 +1,7 @@
 "use client";
 
 import { wpOutcome, type WpGame, type Outcome } from "@/lib/winprob";
-import { TEAM_FULL_NAMES } from "@/lib/teams";
+import { getTeamFullName } from "@/lib/teams";
 import { LOSS_COLOR, WIN_COLOR, getSymmetricDashArray } from "@/lib/chart";
 import { useTooltipPosition } from "./useTooltipPosition";
 
@@ -186,7 +186,7 @@ export function WinProbTooltip({
             className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
             style={{ background: color }}
           />
-          <span className="text-[13px] font-semibold text-[var(--color-fg)]">{TEAM_FULL_NAMES[team]}</span>
+          <span className="text-[13px] font-semibold text-[var(--color-fg)]">{getTeamFullName(team, c.date)}</span>
           <span className="ml-1 text-[11px] text-[var(--color-muted)]">{c.date}</span>
         </div>
         {games.length === 1 && (

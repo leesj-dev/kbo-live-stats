@@ -1,4 +1,4 @@
-// Korean team name -> Naver Sports team code (ported from main.py TEAM_CODES)
+// Korean team name -> Naver Sports team code
 export const TEAM_CODES: Record<string, string> = {
   LG: "LG",
   한화: "HH",
@@ -44,3 +44,31 @@ export const TEAM_COLORS: Record<string, string> = {
   두산: "#534DB0",
   키움: "#B0764A",
 };
+
+export function getTeamShortName(team: string, season?: number | string): string {
+  const year = season ? Number(String(season).slice(0, 4)) : undefined;
+  if (team === "SSG" && year && year <= 2020) {
+    return "SK";
+  }
+  if (team === "키움" && year && year <= 2018) {
+    return "넥센";
+  }
+  return team;
+}
+
+export function getTeamFullName(team: string, season?: number | string): string {
+  const year = season ? Number(String(season).slice(0, 4)) : undefined;
+  if (team === "SSG") {
+    if (year && year <= 2020) {
+      return "SK 와이번스";
+    }
+    return "SSG 랜더스";
+  }
+  if (team === "키움") {
+    if (year && year <= 2018) {
+      return "넥센 히어로즈";
+    }
+    return "키움 히어로즈";
+  }
+  return TEAM_FULL_NAMES[team] ?? team;
+}

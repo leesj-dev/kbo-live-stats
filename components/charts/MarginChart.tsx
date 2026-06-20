@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import type { ChartPayload } from "@/lib/stats";
-import { TEAM_COLORS, TEAM_FULL_NAMES } from "@/lib/teams";
+import { TEAM_COLORS, getTeamShortName, getTeamFullName } from "@/lib/teams";
 import {
   buildXTicks,
   buildYTicks,
@@ -206,7 +206,7 @@ export function MarginChart({
                   x={sx(last.x)}
                   y={sy(last.y)}
                   color={color}
-                  team={s.team}
+                  team={getTeamShortName(s.team, payload.season)}
                   highlighted={isHi}
                   narrow={narrow}
                   animate={animate}
@@ -240,7 +240,7 @@ export function MarginChart({
               className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
               style={{ background: TEAM_COLORS[hover.team] }}
             />
-            <span className="text-[13px] font-semibold text-[var(--color-fg)]">{TEAM_FULL_NAMES[hover.team]}</span>
+            <span className="text-[13px] font-semibold text-[var(--color-fg)]">{getTeamFullName(hover.team, payload.season)}</span>
           </div>
           <span className="mt-1.5 text-xl font-semibold leading-none text-[var(--color-fg)]">
             {yAxis === "margin" ? fmtSigned(hover.pt.y) : fmtRate(hover.pt.y)}

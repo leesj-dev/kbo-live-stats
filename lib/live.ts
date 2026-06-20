@@ -154,7 +154,7 @@ export async function fetchLiveGames(
   season: number,
   ymd: string,
   prevRows: PrevRow[],
-): Promise<{ rows: LiveUpsertRow[]; liveCount: number; finishedCount: number }> {
+): Promise<{ rows: LiveUpsertRow[]; finishedCount: number; allFinishedToday: boolean }> {
   const dash = dashed(ymd);
   const games = (await listGames(ymd, ymd)).filter((g) => g.roundCode === "kbo_r" && g.gameDate === dash);
 
@@ -172,7 +172,6 @@ export async function fetchLiveGames(
   const finalGameIds = [...statusByGame.entries()].filter(([, s]) => s === "final").map(([g]) => g);
 
   const rows: LiveUpsertRow[] = [];
-  let liveCount = 0;
 
   for (const game of games) {
     if (game.cancel || game.statusCode !== "STARTED") continue;
@@ -198,10 +197,7 @@ export async function fetchLiveGames(
     const pad = minRemainingPAs(inning, isTop, state?.out ?? 0);
 
     const built = buildLiveRows(game, home, innings, state, pad);
-    if (built.length) {
-      rows.push(...built);
-      liveCount++;
-    }
+    if (built.length) rows.push(...built);
     await sleep(80);
   }
 
@@ -238,5 +234,8 @@ export async function fetchLiveGames(
     console.error("live finish fold-in failed", err);
   }
 
-  return { rows, liveCount, finishedCount };
+  const allFinishedToday =
+    games.length > 0 && games.every((g) => g.cancel || g.statusCode === "RESULT");
+
+  return { rows, finishedCount, allFinishedToday };
 }

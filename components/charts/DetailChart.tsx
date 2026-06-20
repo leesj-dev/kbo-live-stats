@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { wpOutcome, type WpGame, type WinProbPayload } from "@/lib/winprob";
 import type { ChartPayload } from "@/lib/stats";
-import { TEAM_COLORS } from "@/lib/teams";
+import { TEAM_COLORS, getTeamShortName } from "@/lib/teams";
 import { buildXTicks, buildYTicks, chartGeometry, computeYDomain, type XAxis, type YAxis } from "@/lib/chart";
 import { ChartAxes, HoverMarker, SeriesEndLabel } from "./ChartElements";
 import { WinProbTooltip } from "./WinProbTooltip";
@@ -436,7 +436,7 @@ export function DetailChart({
                 x={sx(clipped.ex)}
                 y={sy(clipped.ey)}
                 color={color}
-                team={s.team}
+                team={getTeamShortName(s.team, payload.season)}
                 highlighted={isHi}
                 narrow={narrow}
                 animate={animate}

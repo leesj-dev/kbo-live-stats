@@ -85,7 +85,7 @@ function extractPlays(tr: unknown, names: Map<string, string>, out: Map<number, 
     if (typeof home !== "number" || typeof away !== "number") continue;
     if (Math.abs(home + away - 100) > 0.5) continue; // skip 0/0 placeholders
 
-    const opts: Opt[] = Array.isArray((r as { textOptions?: unknown }).textOptions) ? ((r as { textOptions: Opt[] }).textOptions) : [];
+    const opts: Opt[] = Array.isArray((r as { textOptions?: unknown }).textOptions) ? (r as { textOptions: Opt[] }).textOptions : [];
     const withState = opts.filter((o) => o.currentGameState);
     const first = withState[0]?.currentGameState ?? {};
     const last = withState[withState.length - 1]?.currentGameState ?? first;
@@ -110,10 +110,10 @@ function extractPlays(tr: unknown, names: Map<string, string>, out: Map<number, 
     out.set(no, {
       no,
       inn: (r as { inn: number }).inn,
-      isTop: (r as { homeOrAway?: number }).homeOrAway !== 1,
+      isTop: String((r as { homeOrAway?: string }).homeOrAway) !== "1",
       // Names by pcode (robust for pinch hitters etc.); title is the fallback.
       batter: (first.batter != null ? names.get(String(first.batter)) : null) ?? batterFromTitle((r as { title?: string }).title),
-      pitcher: first.pitcher != null ? names.get(String(first.pitcher)) ?? null : null,
+      pitcher: first.pitcher != null ? (names.get(String(first.pitcher)) ?? null) : null,
       balls: num(snap.ball),
       strikes: num(snap.strike),
       outs: num(snap.out),

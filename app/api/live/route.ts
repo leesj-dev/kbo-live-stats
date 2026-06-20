@@ -14,10 +14,9 @@ export async function GET(req: Request) {
   const ymd = dateParam && /^\d{8}$/.test(dateParam) ? dateParam : kstYmd();
 
   const games = await getDateGames(ymd);
-  const liveCount = games.filter((g) => g.status === "live").length;
 
   return NextResponse.json(
-    { ymd, liveCount, games },
+    { ymd, games },
     { headers: { "Cache-Control": "public, s-maxage=20, stale-while-revalidate=40" } },
   );
 }

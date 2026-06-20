@@ -19,21 +19,16 @@ export type GameResultRow = {
 
 function resultForTeam(game: ScheduleGame, isHome: boolean): "w" | "l" | "d" {
   if (game.winner === "DRAW") return "d";
-  const teamWon =
-    (isHome && game.winner === "HOME") || (!isHome && game.winner === "AWAY");
+  const teamWon = (isHome && game.winner === "HOME") || (!isHome && game.winner === "AWAY");
   return teamWon ? "w" : "l";
 }
 
 /**
  * Fetch finished KBO regular-season games within [fromYmd, toYmd] (inclusive,
  * YYYYMMDD) and flatten them into one row per tracked team's perspective.
- * Cancelled and unfinished games are skipped. Ported from main.py:38-93.
+ * Cancelled and unfinished games are skipped.
  */
-export async function fetchGames(
-  season: number,
-  fromYmd: string,
-  toYmd: string,
-): Promise<GameResultRow[]> {
+export async function fetchGames(season: number, fromYmd: string, toYmd: string): Promise<GameResultRow[]> {
   const fromDash = dashed(fromYmd);
   const toDash = dashed(toYmd);
   const rows: GameResultRow[] = [];
@@ -293,7 +288,9 @@ export async function fetchWinProbabilities(
       const game = games[gameIndex];
       const localCount = gameIndex + 1;
 
-      console.log(`[${localCount}/${games.length}] ${game.gameDate} - Scraping win prob for ${game.gameId} (${game.awayTeamCode} @ ${game.homeTeamCode})...`);
+      console.log(
+        `[${localCount}/${games.length}] ${game.gameDate} - Scraping win prob for ${game.gameId} (${game.awayTeamCode} @ ${game.homeTeamCode})...`,
+      );
       const wp = await fetchGameWinProb(game.gameId);
       await sleep(jitter(100, 250));
       if (!wp) {
@@ -301,7 +298,9 @@ export async function fetchWinProbabilities(
         opts.onMiss?.(game.gameId);
         continue;
       }
-      console.log(`[${localCount}/${games.length}] ${game.gameDate} - Success ${game.gameId} (${wp.home.length} PAs, score: ${game.awayTeamScore}:${game.homeTeamScore})`);
+      console.log(
+        `[${localCount}/${games.length}] ${game.gameDate} - Success ${game.gameId} (${wp.home.length} PAs, score: ${game.awayTeamScore}:${game.homeTeamScore})`,
+      );
       opts.onHit?.(game.gameId);
 
       for (const [code, isHome, series] of [

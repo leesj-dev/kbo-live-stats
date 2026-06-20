@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { LiveGameCard as Card } from "@/lib/live";
 import type { PlayDetail } from "@/lib/plays";
-import { TEAM_COLORS, TEAM_FULL_NAMES } from "@/lib/teams";
+import { TEAM_COLORS, getTeamShortName, getTeamFullName } from "@/lib/teams";
 import { getSymmetricDashArray } from "@/lib/chart";
 
 const LIVE_RED = "#f0584e";
@@ -46,14 +46,14 @@ function StatusPill({ c }: { c: Card }) {
 }
 
 // One team's row in the header: color dot, name, score, current win prob.
-function TeamLine({ team, score, wp, color }: { team: string; score: number | null; wp: number | null; color: string }) {
+function TeamLine({ team, score, wp, color, season }: { team: string; score: number | null; wp: number | null; color: string; season?: number }) {
   return (
     <div className="flex items-center gap-2">
       <span
         className="h-2.5 w-2.5 shrink-0 rounded-full"
         style={{ background: color }}
       />
-      <span className="flex-1 truncate text-[13px] font-semibold text-[var(--color-fg)]">{TEAM_FULL_NAMES[team] ?? team}</span>
+      <span className="flex-1 truncate text-[13px] font-semibold text-[var(--color-fg)]">{getTeamFullName(team, season)}</span>
       <span className="tnum text-[15px] font-bold text-[var(--color-fg)]">{score ?? "–"}</span>
       {wp != null && (
         <span
@@ -285,6 +285,7 @@ function PlayTooltip({
 
 function GameGraph({ c }: { c: Card }) {
   const { homeSeries: home, awaySeries: away, innings } = c;
+  const season = Number(c.gameDate.slice(0, 4));
   const n = home.length;
   const W = 340;
   const H = 132;
@@ -482,8 +483,8 @@ function GameGraph({ c }: { c: Card }) {
           play={hoverPlay}
           loading={plays === null}
           leftPx={Math.max(4, Math.min(hover.w - TOOLTIP_W - 4, hover.px - TOOLTIP_W / 2))}
-          awayTeam={c.awayTeam}
-          homeTeam={c.homeTeam}
+          awayTeam={getTeamShortName(c.awayTeam, season)}
+          homeTeam={getTeamShortName(c.homeTeam, season)}
           awayColor={awayColor}
           homeColor={homeColor}
           fallbackAwayWp={away[hover.idx]}
@@ -499,6 +500,7 @@ export function LiveGameCard({ card }: { card: Card }) {
   const hasSeries = card.homeSeries.length >= 2;
   const homeColor = TEAM_COLORS[card.homeTeam] ?? "#888";
   const awayColor = TEAM_COLORS[card.awayTeam] ?? "#888";
+  const season = Number(card.gameDate.slice(0, 4));
 
   // Current win prob (away/home) for the header; only meaningful with series.
   const homeWp = hasSeries ? card.homeSeries[card.homeSeries.length - 1] : null;
@@ -513,12 +515,14 @@ export function LiveGameCard({ card }: { card: Card }) {
             score={card.awayScore}
             wp={awayWp}
             color={awayColor}
+            season={season}
           />
           <TeamLine
             team={card.homeTeam}
             score={card.homeScore}
             wp={homeWp}
             color={homeColor}
+            season={season}
           />
         </div>
         <StatusPill c={card} />
