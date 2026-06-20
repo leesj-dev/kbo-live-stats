@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { revalidateTag, revalidatePath } from "next/cache";
 import { fetchLiveGames } from "@/lib/live";
-import { getWinProbRowsByDate, upsertLiveWinProb } from "@/lib/data";
+import { getWinProbRowsByDate, upsertLiveWinProb, upsertResults } from "@/lib/data";
+import { fetchGames } from "@/lib/scraper";
 import { REGULAR_SEASON_START_DATES } from "@/lib/seasons";
 import { kstYmd } from "@/lib/dates";
 
@@ -48,9 +49,20 @@ async function handle(req: Request) {
     upserted = await upsertLiveWinProb(season, rows);
     // Refresh the cached win-prob payload so fresh page loads include live state.
     revalidateTag("winprob-payload");
-    // A finished game changes standings/cumulative lines — regenerate the static
-    // season pages too. Live-only ticks rely on client polling instead (cheaper).
-    if (finishedCount > 0) revalidatePath("/[season]", "page");
+    // A finished game changes standings/cumulative lines — scrape the finished game results,
+    // update the database, clear the chart payload cache, and regenerate the static season pages.
+    if (finishedCount > 0) {
+      try {
+        const resultRows = await fetchGames(season, today, today);
+        if (resultRows.length > 0) {
+          await upsertResults(resultRows);
+          revalidateTag("chart-payload");
+        }
+      } catch (err) {
+        console.error("Failed to fetch/upsert finished game results during live cron:", err);
+      }
+      revalidatePath("/[season]", "page");
+    }
   }
 
   return NextResponse.json({ ok: true, today, season, liveCount, finishedCount, upserted });

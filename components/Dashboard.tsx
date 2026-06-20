@@ -1,6 +1,6 @@
 "use client";
-
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ChartPayload } from "@/lib/stats";
 import { mergeLiveGames, type WinProbPayload, type LiveGamePatch } from "@/lib/winprob";
 import type { LiveGameCard } from "@/lib/live";
@@ -23,6 +23,7 @@ const DETAIL_MIN_SEASON = 2024;
 const signColor = (v: number) => (v > 0 ? POSITIVE_COLOR : v < 0 ? NEGATIVE_COLOR : NEUTRAL_COLOR);
 
 export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload; winProb: WinProbPayload; seasons: number[] }) {
+  const router = useRouter();
   const [chartKind, setChartKind] = useState<ChartKind>("basic");
   const [xAxis, setXAxis] = useState<XAxis>("date");
   const [yAxis, setYAxis] = useState<YAxis>("margin");
@@ -68,7 +69,18 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
         const res = await fetch("/api/live", { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as { games?: LiveGameCard[] };
-        if (alive) setLiveCards(data.games ?? []);
+        if (!alive) return;
+        const newGames = data.games ?? [];
+        setLiveCards((prevLiveCards) => {
+          if (prevLiveCards.length > 0 && newGames.length > 0) {
+            const oldFinalCount = prevLiveCards.filter((g) => g.status === "final").length;
+            const newFinalCount = newGames.filter((g) => g.status === "final").length;
+            if (newFinalCount > oldFinalCount) {
+              router.refresh();
+            }
+          }
+          return newGames;
+        });
       } catch {
         /* ignore transient poll errors */
       }
@@ -79,7 +91,7 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
       alive = false;
       clearInterval(id);
     };
-  }, []);
+  }, [router]);
 
   const liveCount = useMemo(() => liveCards.filter((g) => g.status === "live").length, [liveCards]);
 
@@ -110,11 +122,27 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
   }, [payload.season]);
   // Toggling 기본/상세 (or 승패마진/승률) keeps the current zoom; only clamp it
   // when the active dataset's extent shrinks so the range stays in bounds.
+  // If the user was zoomed to the maximum index, auto-extend the range to the new maximum.
+  const prevDateMaxRef = useRef(dateMaxIdx);
   useEffect(() => {
-    setDateRange(([lo, hi]) => [Math.min(lo, dateMaxIdx), Math.min(hi, dateMaxIdx)]);
+    const prevMax = prevDateMaxRef.current;
+    prevDateMaxRef.current = dateMaxIdx;
+    setDateRange(([lo, hi]) => {
+      const wasAtMax = hi >= prevMax;
+      const nextHi = wasAtMax ? dateMaxIdx : Math.min(hi, dateMaxIdx);
+      return [Math.min(lo, dateMaxIdx), nextHi];
+    });
   }, [dateMaxIdx]);
+
+  const prevGameMaxRef = useRef(gameMax);
   useEffect(() => {
-    setGameRange(([lo, hi]) => [Math.min(Math.max(lo, 1), gameMax), Math.min(hi, gameMax)]);
+    const prevMax = prevGameMaxRef.current;
+    prevGameMaxRef.current = gameMax;
+    setGameRange(([lo, hi]) => {
+      const wasAtMax = hi >= prevMax;
+      const nextHi = wasAtMax ? gameMax : Math.min(hi, gameMax);
+      return [Math.min(Math.max(lo, 1), gameMax), nextHi];
+    });
   }, [gameMax]);
 
   const isGame = xAxis === "game";
