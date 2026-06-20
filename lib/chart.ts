@@ -218,3 +218,16 @@ export function pickHoverPoint<P>(
   if (best && bestD <= hitR * hitR) return best;
   return null;
 }
+
+/**
+ * Calculates a stroke-dasharray pattern that starts and ends with a dash symmetrically
+ * for a line of a given total length.
+ */
+export function getSymmetricDashArray(L: number, dash = 1, desiredGap = 3): string {
+  if (L <= dash) return String(dash);
+  const n = Math.round((L + desiredGap) / (dash + desiredGap));
+  const count = Math.max(2, n);
+  const g = (L - count * dash) / (count - 1);
+  return `${dash} ${g}`;
+}
+

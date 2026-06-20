@@ -2,7 +2,7 @@
 
 import { wpOutcome, type WpGame, type Outcome } from "@/lib/winprob";
 import { TEAM_FULL_NAMES } from "@/lib/teams";
-import { LOSS_COLOR, WIN_COLOR } from "@/lib/chart";
+import { LOSS_COLOR, WIN_COLOR, getSymmetricDashArray } from "@/lib/chart";
 import { useTooltipPosition } from "./useTooltipPosition";
 
 const OUTCOME_LABEL: Record<Outcome, string> = { w: "승", d: "무", l: "패" };
@@ -94,7 +94,7 @@ function Sparkline({
               y2={P.t + ih}
               stroke="var(--color-line)"
               strokeWidth={1}
-              strokeDasharray="1 3"
+              strokeDasharray={getSymmetricDashArray(ih, 1, 3)}
             />
           )}
           <text

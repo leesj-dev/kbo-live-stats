@@ -4,6 +4,7 @@ import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent }
 import type { LiveGameCard as Card } from "@/lib/live";
 import type { PlayDetail } from "@/lib/plays";
 import { TEAM_COLORS, TEAM_FULL_NAMES } from "@/lib/teams";
+import { getSymmetricDashArray } from "@/lib/chart";
 
 const LIVE_RED = "#f0584e";
 const BALL_GREEN = "#46c46a";
@@ -361,7 +362,7 @@ function GameGraph({ c }: { c: Card }) {
                 y2={P.t + ih}
                 stroke="var(--color-line)"
                 strokeWidth={1}
-                strokeDasharray="1 3"
+                strokeDasharray={getSymmetricDashArray(ih, 1, 3)}
               />
             )}
             <text
