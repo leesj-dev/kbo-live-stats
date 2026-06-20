@@ -2,9 +2,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ChartPayload } from "@/lib/stats";
-import { mergeLiveGames, type WinProbPayload, type LiveGamePatch } from "@/lib/winprob";
+import { type WinProbPayload } from "@/lib/winprob";
 import type { LiveGameCard } from "@/lib/live";
 import { TEAM_COLORS } from "@/lib/teams";
+import { dashed, kstYmd } from "@/lib/dates";
 import { chartGeometry, fmtMonthDay, fmtRate, fmtSigned, NEGATIVE_COLOR, NEUTRAL_COLOR, POSITIVE_COLOR, type XAxis, type YAxis } from "@/lib/chart";
 import { MarginChart } from "./charts/MarginChart";
 import { DetailChart } from "./charts/DetailChart";
@@ -93,20 +94,21 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
     };
   }, [router]);
 
-  const liveCount = useMemo(() => liveCards.filter((g) => g.status === "live").length, [liveCards]);
+  const detailWinProb = winProb;
 
-  // Expand each in-progress game into a per-team patch for the detail overlay.
-  const livePatches = useMemo<LiveGamePatch[]>(() => {
-    const out: LiveGamePatch[] = [];
-    for (const g of liveCards) {
-      if (g.status !== "live" || g.homeSeries.length < 1) continue;
-      out.push({ team: g.homeTeam, gameId: g.gameId, gameDate: g.gameDate, series: g.homeSeries, innings: g.innings, livePad: g.livePad });
-      out.push({ team: g.awayTeam, gameId: g.gameId, gameDate: g.gameDate, series: g.awaySeries, innings: g.innings, livePad: g.livePad });
+  const unfinishedTeamsToday = useMemo(() => {
+    const teams = new Set<string>();
+    for (const team of winProb.teams) {
+      const games = winProb.byGame[team] ?? [];
+      const lastGame = games[games.length - 1];
+      if (lastGame && lastGame.live) {
+        teams.add(team);
+      }
     }
-    return out;
-  }, [liveCards]);
+    return teams;
+  }, [winProb]);
 
-  const detailWinProb = useMemo(() => (livePatches.length ? mergeLiveGames(winProb, livePatches) : winProb), [winProb, livePatches]);
+  const todayDate = useMemo(() => dashed(kstYmd()), []);
 
   // The active dataset drives the x-axis bounds and date labels.
   const activeDates = isDetailed ? detailWinProb.dates : payload.dates;
@@ -416,6 +418,8 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
                   width={width}
                   xRange={range}
                   animate={!isPlaying && shouldAnimate}
+                  unfinishedTeamsToday={unfinishedTeamsToday}
+                  todayDate={todayDate}
                 />
               ) : (
                 <MarginChart
@@ -428,6 +432,8 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
                   width={width}
                   xRange={range}
                   animate={!isPlaying && shouldAnimate}
+                  unfinishedTeamsToday={unfinishedTeamsToday}
+                  todayDate={todayDate}
                 />
               )}
               <div

@@ -31,6 +31,8 @@ export function MarginChart({
   width,
   xRange,
   animate = true,
+  unfinishedTeamsToday,
+  todayDate,
 }: {
   payload: ChartPayload;
   xAxis: XAxis;
@@ -41,6 +43,8 @@ export function MarginChart({
   width: number;
   xRange: [number, number];
   animate?: boolean;
+  unfinishedTeamsToday: Set<string>;
+  todayDate: string;
 }) {
   // Responsive coordinate system: W tracks the real container width (≈1 unit per
   // px) and the SVG scales via viewBox + height:auto, so there is no letterbox.
@@ -80,6 +84,9 @@ export function MarginChart({
         arr.forEach((p, i) => {
           const v = yAxis === "margin" ? p.margin : p.winRate;
           if (v == null) return; // skip leading gap before first game
+          if (p.date === todayDate && unfinishedTeamsToday.has(team)) {
+            return;
+          }
           allPts.push({ x: i, y: v, date: p.date, game: null });
         });
       }

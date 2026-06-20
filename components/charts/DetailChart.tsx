@@ -77,8 +77,9 @@ function appendWpPoints(opts: {
   rMin: number;
   rMax: number;
   maxPtsPerSlot: number; // cap on points emitted per slot (≈ 1 per pixel)
+  windowSize: number;
 }) {
-  const { pts, team, wpGame, games, xStart, gameNo, prev, yAxis, rMin, rMax, maxPtsPerSlot } = opts;
+  const { pts, team, wpGame, games, xStart, gameNo, prev, yAxis, rMin, rMax, maxPtsPerSlot, windowSize } = opts;
 
   // An in-progress game counts toward `k` even though its provisional close sits
   // in the draw band — otherwise its line would flatten to `prev.margin` instead
@@ -103,7 +104,7 @@ function appendWpPoints(opts: {
   const nTotal = n + padTotal;
 
   if (n >= 2) {
-    const smoothed = smoothSeries(allWp, 11);
+    const smoothed = smoothSeries(allWp, windowSize);
     // Decimate to roughly screen resolution. A smoothed line needs at most ~1
     // vertex per horizontal pixel, but a per-pitch series packs 100+ samples
     // into a slot that may be only a few pixels wide. Keeping the original
@@ -116,11 +117,13 @@ function appendWpPoints(opts: {
       const p = keep === n ? i : Math.round((i * (n - 1)) / (keep - 1));
       const x = xStart + (p + 1) / nTotal;
       if (x < rMin - 1 || x > rMax + 1) continue;
+      const isLastOfFinished = p === n - 1 && games.every((g) => !g.live);
+      const val = isLastOfFinished ? allWp[p] : smoothed[p];
       pts.push({
         x,
-        y: mapPct(smoothed[p]),
+        y: mapPct(val),
         wp: allWp[p],
-        smoothWp: smoothed[p],
+        smoothWp: val,
         inning: allInnings[p],
         game: gameNo,
         date: wpGame.date,
@@ -155,6 +158,9 @@ function buildSeriesList(
   rMin: number,
   rMax: number,
   maxPtsPerSlot: number,
+  windowSize: number,
+  unfinishedTeamsToday: Set<string>,
+  todayDate: string,
 ): Series[] {
   const list: Series[] = [];
 
@@ -164,6 +170,7 @@ function buildSeriesList(
 
     if (xAxis === "game") {
       for (const c of winProb.byGame[team] ?? []) {
+        if (c.live) continue;
         appendWpPoints({
           pts,
           team,
@@ -176,18 +183,23 @@ function buildSeriesList(
           rMin,
           rMax,
           maxPtsPerSlot,
+          windowSize,
         });
         applyOutcome(cum, c.wpClose);
       }
     } else {
       let lastPlayed: WpGame | null = null;
       (winProb.byDate[team] ?? []).forEach((c, j) => {
-        if (c) {
-          const games = c.subGames ?? [c];
+        let game = c;
+        if (game && game.live) {
+          game = null;
+        }
+        if (game) {
+          const games = game.subGames ?? [game];
           appendWpPoints({
             pts,
             team,
-            wpGame: c,
+            wpGame: game,
             games,
             xStart: j - 1,
             gameNo: null,
@@ -196,12 +208,17 @@ function buildSeriesList(
             rMin,
             rMax,
             maxPtsPerSlot,
+            windowSize,
           });
           for (const g of games) applyOutcome(cum, g.wpClose);
-          lastPlayed = c;
+          lastPlayed = game;
         } else if (lastPlayed && j >= rMin - 1 && j <= rMax + 1) {
           // Flat carry-over point for a day without a game, anchored to the
           // last played game so the tooltip still has something to show.
+          const date = winProb.dates[j];
+          if (date === todayDate && unfinishedTeamsToday.has(team)) {
+            return;
+          }
           const decided = cum.wins + cum.losses;
           pts.push({
             x: j,
@@ -210,7 +227,7 @@ function buildSeriesList(
             smoothWp: lastPlayed.wpClose,
             inning: 9,
             game: null,
-            date: winProb.dates[j],
+            date,
             c: lastPlayed,
             team,
           });
@@ -237,6 +254,8 @@ export function DetailChart({
   width,
   xRange,
   animate = true,
+  unfinishedTeamsToday,
+  todayDate,
 }: {
   winProb: WinProbPayload;
   payload: ChartPayload;
@@ -248,6 +267,8 @@ export function DetailChart({
   width: number;
   xRange: [number, number];
   animate?: boolean;
+  unfinishedTeamsToday: Set<string>;
+  todayDate: string;
 }) {
   const dates = winProb.dates;
 
@@ -278,9 +299,19 @@ export function DetailChart({
   const visibleSpan = Math.max(1, rMaxCeil - (rMin - 1));
   const maxPtsPerSlot = Math.max(2, Math.ceil(innerW / visibleSpan));
 
+  // Calculate dynamic window size based on visibleSpan.
+  // When zoomed in (small visibleSpan), we want less smoothing (smaller windowSize) to show detail.
+  // When zoomed out (large visibleSpan), we want more smoothing (larger windowSize) to clean up noise.
+  const windowSize = useMemo(() => {
+    if (visibleSpan <= 2) return 1;
+    const raw = Math.round(visibleSpan * 0.12);
+    const odd = raw % 2 === 1 ? raw : raw + 1;
+    return Math.max(3, Math.min(21, odd));
+  }, [visibleSpan]);
+
   const seriesList = useMemo(
-    () => buildSeriesList(winProb, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot),
-    [winProb, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot],
+    () => buildSeriesList(winProb, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot, windowSize, unfinishedTeamsToday, todayDate),
+    [winProb, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot, windowSize, unfinishedTeamsToday, todayDate],
   );
 
   const xMin = rMin - 1;
