@@ -319,7 +319,6 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
           <h1 className="mt-1 font-bold text-[34px] min-[490px]:text-5xl leading-[0.9] tracking-tight text-[var(--color-fg)]">
             <span className="text-[var(--color-muted)] font-normal">오늘의</span> 승패마진
           </h1>
-          <LiveBadge liveCount={liveCount} />
         </div>
 
         <div className="flex flex-col items-start gap-2 sm:items-end">
