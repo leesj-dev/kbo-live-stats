@@ -1,15 +1,11 @@
 import { and, eq, gte, lte, sql } from "drizzle-orm";
-import { dashed, kstYmd } from "./dates";
+import { dashed, kstYmd, formatKstDateTime } from "./dates";
 import { REGULAR_SEASON_START_DATES } from "./seasons";
 import { getDb, hasDb } from "./db";
 import { teamGameResults, teamGameWinProb } from "./db/schema";
 import type { GameResultRow } from "./scraper";
 import { buildChartPayload, type ChartPayload, type StatRow } from "./stats";
-import {
-  buildWinProbPayload,
-  type WinProbPayload,
-  type WinProbRow,
-} from "./winprob";
+import { buildWinProbPayload, type WinProbPayload, type WinProbRow } from "./winprob";
 import { listGames, type ScheduleGame } from "./naver";
 import { CODE_TO_TEAM } from "./teams";
 import { complementPct } from "./utils";
@@ -126,29 +122,19 @@ const getCachedWinProbPayload = unstable_cache(
 // `rankedTeams` (the line chart's standings) fixes win-prob team ordering so the
 // sidebar selection lines up across both chart modes. Returns a shallow copy
 // so the cached payload is never mutated.
-export async function getWinProbPayload(
-  season: number,
-  rankedTeams?: string[],
-): Promise<WinProbPayload> {
+export async function getWinProbPayload(season: number, rankedTeams?: string[]): Promise<WinProbPayload> {
   const payload = await getCachedWinProbPayload(season);
   if (!rankedTeams) return payload;
 
   const teamOrder = new Map(rankedTeams.map((t, idx) => [t, idx]));
-  const sortedTeams = [...payload.teams].sort(
-    (a, b) => (teamOrder.get(a) ?? 0) - (teamOrder.get(b) ?? 0),
-  );
+  const sortedTeams = [...payload.teams].sort((a, b) => (teamOrder.get(a) ?? 0) - (teamOrder.get(b) ?? 0));
   return { ...payload, teams: sortedTeams };
 }
 
 // Idempotent insert keyed on (team, gameId).
-export async function upsertWinProb(
-  season: number,
-  rows: WinProbRow[],
-): Promise<number> {
+export async function upsertWinProb(season: number, rows: WinProbRow[]): Promise<number> {
   if (rows.length === 0) return 0;
-  const values: NewTeamGameWinProb[] = rows.map(
-    ({ series, innings, ...r }) => ({ season, ...r, wpSeries: series, wpInnings: innings }),
-  );
+  const values: NewTeamGameWinProb[] = rows.map(({ series, innings, ...r }) => ({ season, ...r, wpSeries: series, wpInnings: innings }));
   const inserted = await getDb()
     .insert(teamGameWinProb)
     .values(values)
@@ -183,22 +169,12 @@ async function readJsonSnapshot<T>(name: string): Promise<T[]> {
   }
 }
 
-export async function getExistingWinProbGameIds(
-  season: number,
-  fromYmd: string,
-  toYmd: string,
-): Promise<string[]> {
+export async function getExistingWinProbGameIds(season: number, fromYmd: string, toYmd: string): Promise<string[]> {
   if (!hasDb()) return [];
   const rows = await getDb()
     .select({ gameId: teamGameWinProb.gameId })
     .from(teamGameWinProb)
-    .where(
-      and(
-        eq(teamGameWinProb.season, season),
-        gte(teamGameWinProb.gameDate, dashed(fromYmd)),
-        lte(teamGameWinProb.gameDate, dashed(toYmd)),
-      ),
-    );
+    .where(and(eq(teamGameWinProb.season, season), gte(teamGameWinProb.gameDate, dashed(fromYmd)), lte(teamGameWinProb.gameDate, dashed(toYmd))));
   // De-duplicate gameIds
   return Array.from(new Set(rows.map((r) => r.gameId)));
 }
@@ -314,24 +290,13 @@ export async function getDateGames(ymd: string): Promise<LiveGameCard[]> {
 
     const homeSeries = homeRow?.series ?? [];
 
-    let startTimeStr: string | null = null;
     const dbStartTime = homeRow?.startTime ?? awayRow?.startTime ?? null;
-    if (dbStartTime) {
-      const d = new Date(dbStartTime);
-      if (!isNaN(d.getTime())) {
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        const hh = String(d.getHours()).padStart(2, "0");
-        const min = String(d.getMinutes()).padStart(2, "0");
-        startTimeStr = `${yyyy}-${mm}-${dd} ${hh}:${min}`;
-      }
-    }
+    const startTimeStr = formatKstDateTime(dbStartTime);
 
     const statusVal = homeRow?.status ?? awayRow?.status ?? "scheduled";
-    const status = (statusVal === "live" || statusVal === "final" || statusVal === "scheduled" || statusVal === "cancel"
-      ? statusVal
-      : "scheduled") as LiveGameCard["status"];
+    const status = (
+      statusVal === "live" || statusVal === "final" || statusVal === "scheduled" || statusVal === "cancel" ? statusVal : "scheduled"
+    ) as LiveGameCard["status"];
 
     cards.push({
       gameId,
@@ -357,10 +322,7 @@ export async function getDateGames(ymd: string): Promise<LiveGameCard[]> {
 // navigable date axis for the LIVE page. Excludes days with no games.
 export async function getGameDates(): Promise<string[]> {
   if (!hasDb()) return [];
-  const rows = await getDb()
-    .selectDistinct({ gameDate: teamGameWinProb.gameDate })
-    .from(teamGameWinProb)
-    .orderBy(teamGameWinProb.gameDate);
+  const rows = await getDb().selectDistinct({ gameDate: teamGameWinProb.gameDate }).from(teamGameWinProb).orderBy(teamGameWinProb.gameDate);
   return rows.map((r) => r.gameDate);
 }
 
@@ -379,11 +341,27 @@ export async function getLiveBoardData(requestedYmd?: string): Promise<{
   const navSet = new Set(dates);
   if (start && today >= start) navSet.add(dashed(today));
   const navDates = [...navSet].sort();
-  const lastGameYmd = dates.length ? dates[dates.length - 1].replace(/-/g, "") : today;
-  const todayGames = requestedYmd ? [] : await getDateGames(today);
-  const hasStarted = todayGames.some((g) => g.status === "live" || g.status === "final");
 
-  const ymd = requestedYmd ?? (hasStarted ? today : lastGameYmd);
+  // Find the last game date excluding today.
+  const lastGameYmd =
+    dates
+      .filter((d) => d !== dashed(today))
+      .pop()
+      ?.replace(/-/g, "") ?? today;
+
+  const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const kstHour = kstNow.getUTCHours();
+  const isAfter5Am = kstHour >= 5;
+
+  // Prefetch today's games to check if there are scheduled or canceled games today.
+  const todayGames = requestedYmd ? [] : await getDateGames(today);
+  const hasTodayGames = todayGames.length > 0;
+
+  // 1. Has games today AND it is after 5:00 AM KST -> today
+  // 2. Otherwise (before 5:00 AM KST OR no games today) -> lastGameYmd
+  const defaultYmd = hasTodayGames && isAfter5Am ? today : lastGameYmd;
+
+  const ymd = requestedYmd ?? defaultYmd;
   const games = ymd === today ? todayGames : await getDateGames(ymd);
 
   return { ymd, games, navDates, today };
