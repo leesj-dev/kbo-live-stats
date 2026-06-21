@@ -18,11 +18,12 @@ import { fetchWinProbabilities } from "../lib/scraper";
 import type { WinProbRow } from "../lib/winprob";
 import { REGULAR_SEASON_START_DATES, seasonCrawlRange } from "../lib/seasons";
 import { TEAM_NAMES } from "../lib/teams";
+import { clampPct, round1 } from "../lib/utils";
 
 const dataDir = path.join(process.cwd(), "data");
 
 const rnd = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
-const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n * 10) / 10));
+const clamp = (n: number) => clampPct(round1(n));
 
 // Plausible open/high/low/close (%) for one finished game from a team's view.
 function mockExtremes(result: "w" | "l" | "d") {

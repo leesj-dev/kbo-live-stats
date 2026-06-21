@@ -59,10 +59,12 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
     return () => ro.disconnect();
   }, []);
 
-  // Live games: poll the day's slate so the LIVE badge and the detail-chart
-  // overlay stay current between server renders. The endpoint is edge-cached, so
-  // this stays cheap no matter how many tabs are open.
-  const [liveCards, setLiveCards] = useState<LiveGameCard[]>([]);
+  // Poll the day's slate and re-render the (statically generated) season page
+  // once a game finishes, so its cumulative line picks up the result. We only
+  // need to detect the final-count rising, so the previous count lives in a ref
+  // rather than state — the fetched cards are never rendered here. The endpoint
+  // is edge-cached, so this stays cheap no matter how many tabs are open.
+  const prevFinalCountRef = useRef<number | null>(null);
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -72,16 +74,13 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
         const data = (await res.json()) as { games?: LiveGameCard[] };
         if (!alive) return;
         const newGames = data.games ?? [];
-        setLiveCards((prevLiveCards) => {
-          if (prevLiveCards.length > 0 && newGames.length > 0) {
-            const oldFinalCount = prevLiveCards.filter((g) => g.status === "final").length;
-            const newFinalCount = newGames.filter((g) => g.status === "final").length;
-            if (newFinalCount > oldFinalCount) {
-              router.refresh();
-            }
-          }
-          return newGames;
-        });
+        if (newGames.length === 0) return;
+        const newFinalCount = newGames.filter((g) => g.status === "final").length;
+        const prevFinalCount = prevFinalCountRef.current;
+        if (prevFinalCount !== null && newFinalCount > prevFinalCount) {
+          router.refresh();
+        }
+        prevFinalCountRef.current = newFinalCount;
       } catch {
         /* ignore transient poll errors */
       }
@@ -93,8 +92,6 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
       clearInterval(id);
     };
   }, [router]);
-
-  const detailWinProb = winProb;
 
   const unfinishedTeamsToday = useMemo(() => {
     const teams = new Set<string>();
@@ -111,9 +108,9 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
   const todayDate = useMemo(() => dashed(kstYmd()), []);
 
   // The active dataset drives the x-axis bounds and date labels.
-  const activeDates = isDetailed ? detailWinProb.dates : payload.dates;
+  const activeDates = isDetailed ? winProb.dates : payload.dates;
   const dateMaxIdx = Math.max(0, activeDates.length - 1);
-  const gameMax = Math.max(1, isDetailed ? detailWinProb.maxGames : payload.maxGames);
+  const gameMax = Math.max(1, isDetailed ? winProb.maxGames : payload.maxGames);
   const [dateRange, setDateRange] = useState<[number, number]>([0, dateMaxIdx]);
   const [gameRange, setGameRange] = useState<[number, number]>([1, gameMax]);
   // A new season is a fresh dataset — reset the zoom to the full extent.
@@ -242,7 +239,7 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
     });
   };
 
-  const hasActiveData = isDetailed ? detailWinProb.teams.length > 0 : payload.teams.length > 0;
+  const hasActiveData = isDetailed ? winProb.teams.length > 0 : payload.teams.length > 0;
   const geo = chartGeometry(width);
 
   // Standings reflect the slider's right endpoint (cumulative season-to-date up
@@ -400,7 +397,7 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
             <>
               {isDetailed ? (
                 <DetailChart
-                  winProb={detailWinProb}
+                  winProb={winProb}
                   payload={payload}
                   xAxis={xAxis}
                   yAxis={yAxis}
@@ -506,7 +503,7 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
           </div>
           <ul className="scroll-thin flex flex-col gap-0.5">
             {standings.map((s, i) => {
-              const noData = isDetailed && !detailWinProb.teams.includes(s.team);
+              const noData = isDetailed && !winProb.teams.includes(s.team);
               const off = hidden.has(s.team) || noData;
               const hi = highlight === s.team;
               return (

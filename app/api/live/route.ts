@@ -3,9 +3,10 @@ import { getDateGames } from "@/lib/data";
 import { kstYmd } from "@/lib/dates";
 
 // Public read endpoint: the day's slate + win-probability series for one date.
-// Polled by the LIVE badge (no date → today), the LIVE board, and the main
-// detail chart's live overlay. A short edge cache keeps concurrent viewers off
-// the database — at most a few origin hits per minute regardless of traffic.
+// Polled by the LIVE board (per-date) and by the season page (no date → today,
+// to re-render when a game finishes). A short edge cache keeps concurrent
+// viewers off the database — at most a few origin hits per minute regardless of
+// traffic.
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 // Labeled segmented control (pill buttons), used for the chart/axis toggles.
 export function Segmented<T extends string>({
@@ -17,29 +17,41 @@ export function Segmented<T extends string>({
   info?: ReactNode;
 }) {
   const activeBtnRef = useRef<HTMLButtonElement | null>(null);
-  const [bgStyle, setBgStyle] = useState<{ left: number; width: number; opacity: number }>({
+  // The last selection we've positioned the badge for. The badge only slides
+  // when this changes to a *different* value — so it appears in place on mount.
+  const prevValueRef = useRef<T | null>(null);
+  const [bgStyle, setBgStyle] = useState<{ left: number; width: number; opacity: number; animate: boolean }>({
     left: 0,
     width: 0,
     opacity: 0,
+    animate: false,
   });
 
-  const updateBg = () => {
+  const updateBg = (animate: boolean) => {
     const activeEl = activeBtnRef.current;
     if (activeEl) {
       setBgStyle({
         left: activeEl.offsetLeft,
         width: activeEl.offsetWidth,
         opacity: 1,
+        animate,
       });
     }
   };
 
-  useEffect(() => {
-    updateBg();
-    
-    // Reposition the background sliding badge on window resize
-    window.addEventListener("resize", updateBg);
-    return () => window.removeEventListener("resize", updateBg);
+  // useLayoutEffect positions the badge before the first paint, so there's no
+  // flash from the initial (0, 0) state. `animate` is off on mount (and on
+  // resize) and only on when the selection actually changes — comparing against
+  // a ref makes this robust to Strict Mode's double-invoked effects, which a
+  // plain "is mounted" flag is not.
+  useLayoutEffect(() => {
+    const animate = prevValueRef.current !== null && prevValueRef.current !== value;
+    updateBg(animate);
+    prevValueRef.current = value;
+
+    const onResize = () => updateBg(false);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, [value, options]);
 
   return (
@@ -51,7 +63,9 @@ export function Segmented<T extends string>({
       <div className="relative inline-flex rounded-lg border border-[var(--color-line)] bg-[var(--color-panel)] p-0.5 select-none">
         {/* Sliding background badge */}
         <span
-          className="absolute top-0.5 bottom-0.5 rounded-[6px] bg-[var(--color-panel-2)] shadow-[inset_0_0_0_1px_var(--color-line-strong)] transition-all duration-200 ease-[cubic-bezier(0.25,1,0.5,1)] pointer-events-none"
+          className={`absolute top-0.5 bottom-0.5 rounded-[6px] bg-[var(--color-panel-2)] shadow-[inset_0_0_0_1px_var(--color-line-strong)] pointer-events-none ${
+            bgStyle.animate ? "transition-all duration-200 ease-[cubic-bezier(0.25,1,0.5,1)]" : ""
+          }`}
           style={{
             left: `${bgStyle.left}px`,
             width: `${bgStyle.width}px`,

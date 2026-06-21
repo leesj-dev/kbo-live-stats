@@ -5,11 +5,10 @@
 // /api/live/game/[gameId]; not stored, so it works the same for live and past games.
 
 import { naverHeaders } from "./naver";
+import { clampPct, sleep } from "./utils";
 
 const GAME_BASE = "https://api-gw.sports.naver.com/schedule/games";
 const MAX_INNING = 15;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const clampPct = (n: number) => Math.max(0, Math.min(100, n));
 
 export type PlayDetail = {
   no: number; // plate sequence (aligns with the win-prob series order)

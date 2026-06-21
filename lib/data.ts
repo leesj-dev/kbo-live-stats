@@ -12,6 +12,7 @@ import {
 } from "./winprob";
 import { listGames, type ScheduleGame } from "./naver";
 import { CODE_TO_TEAM } from "./teams";
+import { complementPct } from "./utils";
 import type { LiveUpsertRow, LiveGameCard } from "./live";
 import type { NewTeamGameWinProb } from "./db/schema";
 import { unstable_cache } from "next/cache";
@@ -94,8 +95,8 @@ export async function getWinProbRows(season: number): Promise<WinProbRow[]> {
     .from(teamGameWinProb)
     .where(eq(teamGameWinProb.season, season));
   // In-progress games are carried through as provisional rows (live=true), so the
-  // detail chart can show a forming line; the client live-merge replaces them by
-  // gameId with fresher data between scrapes.
+  // detail chart can show a forming line. The season page re-renders on a poll
+  // (Dashboard) to pick up fresher live state between scrapes.
   return rows.map((r) => ({
     team: r.team,
     gameId: r.gameId,
@@ -203,9 +204,6 @@ export async function getExistingWinProbGameIds(
 }
 
 // --- Live --------------------------------------------------------------------
-
-const clampPct = (n: number) => Math.max(0, Math.min(100, n));
-const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // Upsert live (or just-finished) rows. Unlike upsertWinProb (which only refreshes
 // scores), every win-prob field can change tick to tick, so the whole row is
@@ -325,7 +323,7 @@ export async function getDateGames(ymd: string): Promise<LiveGameCard[]> {
         inningText: a?.inningText ?? b?.inningText ?? null,
         startTime: null,
         homeSeries,
-        awaySeries: b?.series ?? homeSeries.map((v) => clampPct(round1(100 - v))),
+        awaySeries: b?.series ?? homeSeries.map(complementPct),
         innings: a?.innings ?? b?.innings ?? [],
         livePad: a?.livePad ?? b?.livePad ?? 0,
       } satisfies LiveGameCard;
@@ -338,7 +336,7 @@ export async function getDateGames(ymd: string): Promise<LiveGameCard[]> {
     const teams = byGameTeam.get(g.gameId);
     const homeRow = teams?.get(homeTeam);
     const awayRow = teams?.get(awayTeam);
-    const homeSeries = homeRow?.series ?? (awayRow ? awayRow.series.map((v) => clampPct(round1(100 - v))) : []);
+    const homeSeries = homeRow?.series ?? (awayRow ? awayRow.series.map(complementPct) : []);
     const status: LiveGameCard["status"] = g.cancel
       ? "cancel"
       : g.statusCode === "STARTED"
@@ -357,7 +355,7 @@ export async function getDateGames(ymd: string): Promise<LiveGameCard[]> {
       inningText: homeRow?.inningText ?? awayRow?.inningText ?? (status === "live" ? g.statusInfo ?? null : null),
       startTime: g.gameDateTime ?? null,
       homeSeries,
-      awaySeries: homeSeries.map((v) => clampPct(round1(100 - v))),
+      awaySeries: homeSeries.map(complementPct),
       innings: homeRow?.innings ?? awayRow?.innings ?? [],
       livePad: homeRow?.livePad ?? awayRow?.livePad ?? 0,
     } satisfies LiveGameCard;

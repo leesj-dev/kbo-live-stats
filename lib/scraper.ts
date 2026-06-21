@@ -1,6 +1,7 @@
 import { CODE_TO_TEAM } from "./teams";
 import { dashed } from "./dates";
 import { listGames, naverHeaders, type ScheduleGame } from "./naver";
+import { clampPct, complementPct, sleep, jitter } from "./utils";
 import type { WinProbRow } from "./winprob";
 
 // ===========================================================================
@@ -102,10 +103,6 @@ const MAX_INNING = 15;
 // the crawler appends `?inning={n}`. Kept as a one-item list so the diagnostic
 // probe (scripts/probe-winprob.ts) can still iterate and report on it.
 export const WINPROB_CANDIDATES: { name: string; path: string }[] = [{ name: "relay", path: `${GAME_BASE}/{id}/relay` }];
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const jitter = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
-const clampPct = (n: number) => Math.max(0, Math.min(100, n));
 
 export type RelayPoint = { no: number; home: number; inn: number };
 
@@ -218,8 +215,7 @@ export async function fetchGameWinProb(gameId: string): Promise<GameWinProb | nu
   const ordered = [...byNo.entries()].sort((a, b) => a[0] - b[0]).map(([, p]) => p);
   const home = ordered.map((p) => p.home);
   const innings = ordered.map((p) => p.inn);
-  const round1 = (n: number) => Math.round(n * 10) / 10;
-  return { home, away: home.map((h) => clampPct(round1(100 - h))), innings };
+  return { home, away: home.map(complementPct), innings };
 }
 
 function extremes(

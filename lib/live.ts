@@ -9,10 +9,7 @@ import { dashed } from "./dates";
 import { listGames, type ScheduleGame } from "./naver";
 import { CODE_TO_TEAM } from "./teams";
 import { fetchRelayInning, fetchGameWinProb, fetchWinProbabilities, type RelayGameState } from "./scraper";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const clampPct = (n: number) => Math.max(0, Math.min(100, n));
-const round1 = (n: number) => Math.round(n * 10) / 10;
+import { clampPct, complementPct, sleep } from "./utils";
 
 // One row to upsert into team_game_win_prob (per team's perspective of a game).
 export type LiveUpsertRow = {
@@ -119,7 +116,7 @@ function buildLiveRows(game: ScheduleGame, home: number[], innings: number[], st
   const awayName = CODE_TO_TEAM[game.awayTeamCode];
   if (!homeName || !awayName || home.length < 1) return [];
 
-  const away = home.map((h) => clampPct(round1(100 - h)));
+  const away = home.map(complementPct);
   const homeScore = state?.homeScore ?? game.homeTeamScore ?? null;
   const awayScore = state?.awayScore ?? game.awayTeamScore ?? null;
   // gameDateTime is KST wall-clock; pin the offset so the instant is correct.
@@ -207,31 +204,32 @@ export async function fetchLiveGames(
   const finalSet = new Set(finalGameIds);
   const needFold = games.some((g) => !g.cancel && g.statusCode === "RESULT" && !finalSet.has(g.gameId));
   let finishedCount = 0;
-  if (needFold)
+  if (needFold) {
     try {
-    const finishedRows = await fetchWinProbabilities(season, ymd, ymd, { excludeGameIds: finalGameIds });
-    for (const r of finishedRows) {
-      rows.push({
-        team: r.team,
-        gameId: r.gameId,
-        gameDate: r.gameDate,
-        wpOpen: r.wpOpen,
-        wpHigh: r.wpHigh,
-        wpLow: r.wpLow,
-        wpClose: r.wpClose,
-        series: r.series,
-        innings: r.innings,
-        teamScore: r.teamScore ?? null,
-        opponentScore: r.opponentScore ?? null,
-        status: "final",
-        startTime: null,
-        inningText: null,
-        livePad: 0,
-      });
+      const finishedRows = await fetchWinProbabilities(season, ymd, ymd, { excludeGameIds: finalGameIds });
+      for (const r of finishedRows) {
+        rows.push({
+          team: r.team,
+          gameId: r.gameId,
+          gameDate: r.gameDate,
+          wpOpen: r.wpOpen,
+          wpHigh: r.wpHigh,
+          wpLow: r.wpLow,
+          wpClose: r.wpClose,
+          series: r.series,
+          innings: r.innings,
+          teamScore: r.teamScore ?? null,
+          opponentScore: r.opponentScore ?? null,
+          status: "final",
+          startTime: null,
+          inningText: null,
+          livePad: 0,
+        });
+      }
+      finishedCount = new Set(finishedRows.map((r) => r.gameId)).size;
+    } catch (err) {
+      console.error("live finish fold-in failed", err);
     }
-    finishedCount = new Set(finishedRows.map((r) => r.gameId)).size;
-  } catch (err) {
-    console.error("live finish fold-in failed", err);
   }
 
   const allFinishedToday =
