@@ -6,6 +6,8 @@ import { IBM_Plex_Mono } from "next/font/google";
 import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
+
 
 // Served from /_next/static as well — next/font downloads at build time.
 const plexMono = IBM_Plex_Mono({
@@ -29,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh antialiased">
         {children}
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
