@@ -12,7 +12,7 @@
   --color-amber: #f4c20d;
 
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
-  --font-sans: var(--font-pretendard), system-ui, sans-serif;
+  --font-sans: "Pretendard Variable", system-ui, sans-serif;
 }
 
 :root {
@@ -94,4 +94,25 @@ body::after {
 .scroll-thin::-webkit-scrollbar-thumb {
   background: var(--color-line-strong);
   border-radius: 999px;
+}
+
+/* Shimmer loader (skeleton) */
+@keyframes shimmer-slide {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  animation: shimmer-slide 1.5s infinite ease-in-out;
 }

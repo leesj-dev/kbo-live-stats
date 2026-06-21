@@ -23,7 +23,15 @@ const DETAIL_MIN_SEASON = 2024;
 
 const signColor = (v: number) => (v > 0 ? POSITIVE_COLOR : v < 0 ? NEGATIVE_COLOR : NEUTRAL_COLOR);
 
-export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload; winProb: WinProbPayload; seasons: number[] }) {
+export function Dashboard({
+  payload,
+  winProb: initialWinProb = null,
+  seasons,
+}: {
+  payload: ChartPayload;
+  winProb?: WinProbPayload | null;
+  seasons: number[];
+}) {
   const router = useRouter();
   const [chartKind, setChartKind] = useState<ChartKind>("basic");
   const [xAxis, setXAxis] = useState<XAxis>("date");
@@ -74,6 +82,17 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
         const data = (await res.json()) as { games?: LiveGameCard[] };
         if (!alive) return;
         const newGames = data.games ?? [];
+
+        // Extract teams currently playing live games
+        const nextLiveTeams = new Set<string>();
+        for (const g of newGames) {
+          if (g.status === "live") {
+            nextLiveTeams.add(g.homeTeam);
+            nextLiveTeams.add(g.awayTeam);
+          }
+        }
+        setLiveTeams(nextLiveTeams);
+
         if (newGames.length === 0) return;
         const newFinalCount = newGames.filter((g) => g.status === "final").length;
         const prevFinalCount = prevFinalCountRef.current;
@@ -93,24 +112,61 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
     };
   }, [router]);
 
+  const [winProb, setWinProb] = useState<WinProbPayload | null>(initialWinProb);
+  const [isLoadingWp, setIsLoadingWp] = useState(false);
+  const [liveTeams, setLiveTeams] = useState<Set<string>>(new Set());
+
   const unfinishedTeamsToday = useMemo(() => {
-    const teams = new Set<string>();
-    for (const team of winProb.teams) {
-      const games = winProb.byGame[team] ?? [];
-      const lastGame = games[games.length - 1];
-      if (lastGame && lastGame.live) {
-        teams.add(team);
+    const teams = new Set<string>(liveTeams);
+    if (winProb) {
+      for (const team of winProb.teams) {
+        const games = winProb.byGame[team] ?? [];
+        const lastGame = games[games.length - 1];
+        if (lastGame && lastGame.live) {
+          teams.add(team);
+        }
       }
     }
     return teams;
-  }, [winProb]);
+  }, [winProb, liveTeams]);
 
   const todayDate = useMemo(() => dashed(kstYmd()), []);
 
+  // Fetch win-probability payload asynchronously in the background.
+  useEffect(() => {
+    setWinProb(initialWinProb);
+  }, [payload.season, initialWinProb]);
+
+  useEffect(() => {
+    if (winProb) return;
+    let alive = true;
+    const fetchWp = async () => {
+      setIsLoadingWp(true);
+      try {
+        const res = await fetch(`/api/charts/${payload.season}`);
+        if (!res.ok) throw new Error("Fetch failed");
+        const data = (await res.json()) as WinProbPayload;
+        if (alive) {
+          setWinProb(data);
+        }
+      } catch (err) {
+        console.error("Failed to load win probability data:", err);
+      } finally {
+        if (alive) {
+          setIsLoadingWp(false);
+        }
+      }
+    };
+    fetchWp();
+    return () => {
+      alive = false;
+    };
+  }, [payload.season, winProb]);
+
   // The active dataset drives the x-axis bounds and date labels.
-  const activeDates = isDetailed ? winProb.dates : payload.dates;
+  const activeDates = isDetailed && winProb ? winProb.dates : payload.dates;
   const dateMaxIdx = Math.max(0, activeDates.length - 1);
-  const gameMax = Math.max(1, isDetailed ? winProb.maxGames : payload.maxGames);
+  const gameMax = Math.max(1, isDetailed && winProb ? winProb.maxGames : payload.maxGames);
   const [dateRange, setDateRange] = useState<[number, number]>([0, dateMaxIdx]);
   const [gameRange, setGameRange] = useState<[number, number]>([1, gameMax]);
   // A new season is a fresh dataset — reset the zoom to the full extent.
@@ -239,7 +295,7 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
     });
   };
 
-  const hasActiveData = isDetailed ? winProb.teams.length > 0 : payload.teams.length > 0;
+  const hasActiveData = isDetailed ? (winProb ? winProb.teams.length > 0 : false) : payload.teams.length > 0;
   const geo = chartGeometry(width);
 
   // Standings reflect the slider's right endpoint (cumulative season-to-date up
@@ -396,20 +452,29 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
           {hasActiveData ? (
             <>
               {isDetailed ? (
-                <DetailChart
-                  winProb={winProb}
-                  payload={payload}
-                  xAxis={xAxis}
-                  yAxis={yAxis}
-                  hidden={hidden}
-                  highlight={highlight}
-                  onHighlight={setHighlight}
-                  width={width}
-                  xRange={range}
-                  animate={!isPlaying && shouldAnimate}
-                  unfinishedTeamsToday={unfinishedTeamsToday}
-                  todayDate={todayDate}
-                />
+                winProb ? (
+                  <DetailChart
+                    winProb={winProb}
+                    payload={payload}
+                    xAxis={xAxis}
+                    yAxis={yAxis}
+                    hidden={hidden}
+                    highlight={highlight}
+                    onHighlight={setHighlight}
+                    width={width}
+                    xRange={range}
+                    animate={!isPlaying && shouldAnimate}
+                    unfinishedTeamsToday={unfinishedTeamsToday}
+                    todayDate={todayDate}
+                  />
+                ) : (
+                  <div className="flex aspect-[16/9] w-full min-h-[300px] items-center justify-center">
+                    <div className="text-center">
+                      <div className="mb-2.5 h-8 w-8 animate-spin rounded-full border-4 border-[var(--color-amber)] border-t-transparent mx-auto"></div>
+                      <span className="text-sm font-semibold text-[var(--color-muted)]">상세 승리확률 데이터를 불러오는 중...</span>
+                    </div>
+                  </div>
+                )
               ) : (
                 <MarginChart
                   payload={payload}
@@ -503,7 +568,7 @@ export function Dashboard({ payload, winProb, seasons }: { payload: ChartPayload
           </div>
           <ul className="scroll-thin flex flex-col gap-0.5">
             {standings.map((s, i) => {
-              const noData = isDetailed && !winProb.teams.includes(s.team);
+              const noData = isDetailed && (!winProb || !winProb.teams.includes(s.team));
               const off = hidden.has(s.team) || noData;
               const hi = highlight === s.team;
               return (

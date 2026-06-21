@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono } from "next/font/google";
-import localFont from "next/font/local";
+// Self-hosted Pretendard: the dynamic-subset CSS splits the variable font into
+// unicode-range chunks, so browsers fetch only the subsets a page actually
+// renders. Next copies the woff2 files into /_next/static at build time.
+import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-
-const pretendard = localFont({
-  src: "../node_modules/pretendard/dist/web/variable/woff2/PretendardVariable.woff2",
-  display: "swap",
-  variable: "--font-pretendard",
-});
 
 // Served from /_next/static as well — next/font downloads at build time.
 const plexMono = IBM_Plex_Mono({
@@ -28,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="ko"
-      className={`${plexMono.variable} ${pretendard.variable}`}
+      className={plexMono.variable}
     >
       <body className="min-h-dvh antialiased">
         {children}

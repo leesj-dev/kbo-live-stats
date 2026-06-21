@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
-import { getChartPayload, getWinProbPayload } from "@/lib/data";
+import { getChartPayload } from "@/lib/data";
 import { SEASONS, isValidSeason } from "@/lib/seasons";
 import { emptyChartPayload, type ChartPayload } from "@/lib/stats";
-import { emptyWinProbPayload, type WinProbPayload } from "@/lib/winprob";
 import { Dashboard } from "@/components/charts/Dashboard";
 
 // Statically generated per season, refreshed via ISR (background regeneration).
@@ -28,17 +27,14 @@ export default async function SeasonPage({
   if (!Number.isInteger(season) || !isValidSeason(season)) notFound();
 
   let payload: ChartPayload;
-  let winProb: WinProbPayload;
   try {
     payload = await getChartPayload(season);
-    // Win-prob teams follow the line chart's standings so the sidebar lines up.
-    winProb = await getWinProbPayload(season, payload.teams);
   } catch {
     // DB unreachable during (re)generation — render an empty shell rather than
     // failing the build; the next revalidation will retry.
     payload = emptyChartPayload(season);
-    winProb = emptyWinProbPayload(season);
   }
 
-  return <Dashboard payload={payload} winProb={winProb} seasons={SEASONS} />;
+  return <Dashboard payload={payload} seasons={SEASONS} />;
 }
+
