@@ -263,13 +263,21 @@ export async function getWinProbRowsByDate(ymd: string): Promise<
     .where(eq(teamGameWinProb.gameDate, dashed(ymd)));
 }
 
+export const getCachedWinProbRowsByDate = unstable_cache(
+  async (ymd: string) => {
+    return getWinProbRowsByDate(ymd);
+  },
+  ["winprob-rows-by-date"],
+  { revalidate: false, tags: ["winprob-payload"] },
+);
+
 // The full slate for a date — the games themselves from the Naver schedule (so
 // cancelled and not-yet-started games appear), joined with stored win-prob
 // series. away series is derived as 100 − home. Falls back to DB-only when the
 // schedule is unreachable.
 export async function getDateGames(ymd: string): Promise<LiveGameCard[]> {
   const dash = dashed(ymd);
-  const dbRows = await getWinProbRowsByDate(ymd);
+  const dbRows = await getCachedWinProbRowsByDate(ymd);
   const byGame = new Map<string, (typeof dbRows)[number][]>();
   for (const r of dbRows) {
     let list = byGame.get(r.gameId);
@@ -335,8 +343,11 @@ export async function getLiveBoardData(requestedYmd?: string): Promise<{
   navDates: string[];
   today: string;
 }> {
-  const dates = await getGameDates();
   const today = kstYmd();
+
+  // Run dates fetch and today's games fetch in parallel to minimize network RTT overhead
+  const [dates, todayGames] = await Promise.all([getCachedGameDates(), requestedYmd ? Promise.resolve([]) : getDateGames(today)]);
+
   const start = REGULAR_SEASON_START_DATES[Number(today.slice(0, 4))];
   const navSet = new Set(dates);
   if (start && today >= start) navSet.add(dashed(today));
@@ -353,8 +364,6 @@ export async function getLiveBoardData(requestedYmd?: string): Promise<{
   const kstHour = kstNow.getUTCHours();
   const isAfter5Am = kstHour >= 5;
 
-  // Prefetch today's games to check if there are scheduled or canceled games today.
-  const todayGames = requestedYmd ? [] : await getDateGames(today);
   const hasTodayGames = todayGames.length > 0;
 
   // 1. Has games today AND it is after 5:00 AM KST -> today
@@ -366,3 +375,11 @@ export async function getLiveBoardData(requestedYmd?: string): Promise<{
 
   return { ymd, games, navDates, today };
 }
+
+export const getCachedGameDates = unstable_cache(
+  async () => {
+    return getGameDates();
+  },
+  ["game-dates-list"],
+  { revalidate: false, tags: ["winprob-payload"] },
+);
