@@ -90,6 +90,7 @@ export function SiteNav({ active }: { active: TabKey }) {
                 else tabRefs.current.delete(t.key);
               }}
               href={t.href}
+              prefetch={true}
               aria-current={on ? "page" : undefined}
               className={`px-2.5 pb-3 pt-1 text-[15px] font-semibold transition-colors ${
                 on ? "text-[var(--color-fg)]" : "text-[var(--color-muted)] hover:text-[var(--color-fg)]"
