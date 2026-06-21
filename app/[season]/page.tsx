@@ -3,7 +3,7 @@ import { getChartPayload, getWinProbPayload } from "@/lib/data";
 import { SEASONS, isValidSeason } from "@/lib/seasons";
 import { emptyChartPayload, type ChartPayload } from "@/lib/stats";
 import { emptyWinProbPayload, type WinProbPayload } from "@/lib/winprob";
-import { Dashboard } from "@/components/Dashboard";
+import { Dashboard } from "@/components/charts/Dashboard";
 
 // Statically generated per season, refreshed via ISR (background regeneration).
 // This is NOT SSR: pages are served as static HTML. They regenerate at most

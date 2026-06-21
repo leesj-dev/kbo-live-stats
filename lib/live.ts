@@ -24,7 +24,7 @@ export type LiveUpsertRow = {
   innings: number[];
   teamScore: number | null;
   opponentScore: number | null;
-  status: "live" | "final";
+  status: "live" | "final" | "scheduled" | "cancel";
   startTime: Date | null;
   inningText: string | null;
   livePad: number;
@@ -171,9 +171,68 @@ export async function fetchLiveGames(
   const rows: LiveUpsertRow[] = [];
 
   for (const game of games) {
-    if (game.cancel || game.statusCode !== "STARTED") continue;
+    if (finalGameIds.includes(game.gameId)) continue;
+
     const homeName = CODE_TO_TEAM[game.homeTeamCode];
-    const prevHome = homeName ? prevByGameTeam.get(game.gameId)?.get(homeName) : undefined;
+    const awayName = CODE_TO_TEAM[game.awayTeamCode];
+
+    if (game.cancel) {
+      if (homeName && awayName) {
+        const startTime = game.gameDateTime ? new Date(`${game.gameDateTime}+09:00`) : null;
+        const buildCancel = (team: string): LiveUpsertRow => ({
+          team,
+          gameId: game.gameId,
+          gameDate: game.gameDate,
+          wpOpen: 50,
+          wpHigh: 50,
+          wpLow: 50,
+          wpClose: 50,
+          series: [],
+          innings: [],
+          teamScore: null,
+          opponentScore: null,
+          status: "cancel",
+          startTime,
+          inningText: game.statusInfo ?? "취소",
+          livePad: 0,
+        });
+        rows.push(buildCancel(homeName), buildCancel(awayName));
+      }
+      continue;
+    }
+
+    if (game.statusCode !== "STARTED" && game.statusCode !== "RESULT") {
+      if (homeName && awayName) {
+        const startTime = game.gameDateTime ? new Date(`${game.gameDateTime}+09:00`) : null;
+        const buildScheduled = (team: string): LiveUpsertRow => ({
+          team,
+          gameId: game.gameId,
+          gameDate: game.gameDate,
+          wpOpen: 50,
+          wpHigh: 50,
+          wpLow: 50,
+          wpClose: 50,
+          series: [],
+          innings: [],
+          teamScore: null,
+          opponentScore: null,
+          status: "scheduled",
+          startTime,
+          inningText: game.statusInfo ?? "경기전",
+          livePad: 0,
+        });
+        rows.push(buildScheduled(homeName), buildScheduled(awayName));
+      }
+      continue;
+    }
+
+    if (game.statusCode === "RESULT") {
+      // Completed games are handled below by the full-crawl folder-in mechanism
+      continue;
+    }
+
+    if (!homeName) continue;
+    const prevHome = prevByGameTeam.get(game.gameId)?.get(homeName);
 
     const parsed = parseInning(game.statusInfo);
     let home: number[];

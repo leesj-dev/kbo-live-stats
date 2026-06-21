@@ -266,6 +266,7 @@ export async function getWinProbRowsByDate(ymd: string): Promise<
     opponentScore: number | null;
     inningText: string | null;
     livePad: number;
+    startTime: Date | null;
   }[]
 > {
   if (!hasDb()) return [];
@@ -280,6 +281,7 @@ export async function getWinProbRowsByDate(ymd: string): Promise<
       opponentScore: teamGameWinProb.opponentScore,
       inningText: teamGameWinProb.inningText,
       livePad: teamGameWinProb.livePad,
+      startTime: teamGameWinProb.startTime,
     })
     .from(teamGameWinProb)
     .where(eq(teamGameWinProb.gameDate, dashed(ymd)));
@@ -292,74 +294,63 @@ export async function getWinProbRowsByDate(ymd: string): Promise<
 export async function getDateGames(ymd: string): Promise<LiveGameCard[]> {
   const dash = dashed(ymd);
   const dbRows = await getWinProbRowsByDate(ymd);
-  const byGameTeam = new Map<string, Map<string, (typeof dbRows)[number]>>();
+  const byGame = new Map<string, (typeof dbRows)[number][]>();
   for (const r of dbRows) {
-    let m = byGameTeam.get(r.gameId);
-    if (!m) byGameTeam.set(r.gameId, (m = new Map()));
-    m.set(r.team, r);
+    let list = byGame.get(r.gameId);
+    if (!list) byGame.set(r.gameId, (list = []));
+    list.push(r);
   }
 
-  let schedule: ScheduleGame[] = [];
-  try {
-    schedule = (await listGames(ymd, ymd)).filter((g) => g.roundCode === "kbo_r" && g.gameDate === dash);
-  } catch {
-    schedule = [];
-  }
+  const cards: LiveGameCard[] = [];
+  for (const [gameId, rows] of byGame.entries()) {
+    // gameId format: YYYYMMDD[away][home][dh] e.g., 20260621WOHT0
+    const awayCode = gameId.slice(8, 10);
+    const homeCode = gameId.slice(10, 12);
+    const parsedAwayTeam = CODE_TO_TEAM[awayCode] ?? awayCode;
+    const parsedHomeTeam = CODE_TO_TEAM[homeCode] ?? homeCode;
 
-  if (schedule.length === 0) {
-    // Schedule unavailable: reconstruct from stored rows (no cancelled games,
-    // team orientation arbitrary — best effort for past dates while offline).
-    return [...byGameTeam.entries()].map(([gameId, teams]) => {
-      const [a, b] = [...teams.values()];
-      const homeSeries = a?.series ?? [];
-      return {
-        gameId,
-        gameDate: dash,
-        status: a?.status === "live" || b?.status === "live" ? "live" : "final",
-        homeTeam: a?.team ?? "",
-        awayTeam: b?.team ?? "",
-        homeScore: a?.teamScore ?? null,
-        awayScore: b?.teamScore ?? null,
-        inningText: a?.inningText ?? b?.inningText ?? null,
-        startTime: null,
-        homeSeries,
-        awaySeries: b?.series ?? homeSeries.map(complementPct),
-        innings: a?.innings ?? b?.innings ?? [],
-        livePad: a?.livePad ?? b?.livePad ?? 0,
-      } satisfies LiveGameCard;
-    });
-  }
+    const homeRow = rows.find((r) => r.team === parsedHomeTeam) ?? rows[0];
+    const awayRow = rows.find((r) => r.team === parsedAwayTeam) ?? rows[1] ?? rows[0];
 
-  return schedule.map((g) => {
-    const homeTeam = CODE_TO_TEAM[g.homeTeamCode] ?? g.homeTeamCode;
-    const awayTeam = CODE_TO_TEAM[g.awayTeamCode] ?? g.awayTeamCode;
-    const teams = byGameTeam.get(g.gameId);
-    const homeRow = teams?.get(homeTeam);
-    const awayRow = teams?.get(awayTeam);
-    const homeSeries = homeRow?.series ?? (awayRow ? awayRow.series.map(complementPct) : []);
-    const status: LiveGameCard["status"] = g.cancel
-      ? "cancel"
-      : g.statusCode === "STARTED"
-        ? "live"
-        : g.statusCode === "RESULT"
-          ? "final"
-          : "scheduled";
-    return {
-      gameId: g.gameId,
-      gameDate: g.gameDate,
+    const homeSeries = homeRow?.series ?? [];
+
+    let startTimeStr: string | null = null;
+    const dbStartTime = homeRow?.startTime ?? awayRow?.startTime ?? null;
+    if (dbStartTime) {
+      const d = new Date(dbStartTime);
+      if (!isNaN(d.getTime())) {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const hh = String(d.getHours()).padStart(2, "0");
+        const min = String(d.getMinutes()).padStart(2, "0");
+        startTimeStr = `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+      }
+    }
+
+    const statusVal = homeRow?.status ?? awayRow?.status ?? "scheduled";
+    const status = (statusVal === "live" || statusVal === "final" || statusVal === "scheduled" || statusVal === "cancel"
+      ? statusVal
+      : "scheduled") as LiveGameCard["status"];
+
+    cards.push({
+      gameId,
+      gameDate: dash,
       status,
-      homeTeam,
-      awayTeam,
-      homeScore: homeRow?.teamScore ?? g.homeTeamScore ?? null,
-      awayScore: awayRow?.teamScore ?? g.awayTeamScore ?? null,
-      inningText: homeRow?.inningText ?? awayRow?.inningText ?? (status === "live" ? g.statusInfo ?? null : null),
-      startTime: g.gameDateTime ?? null,
+      homeTeam: parsedHomeTeam,
+      awayTeam: parsedAwayTeam,
+      homeScore: homeRow?.teamScore ?? null,
+      awayScore: awayRow?.teamScore ?? null,
+      inningText: homeRow?.inningText ?? awayRow?.inningText ?? null,
+      startTime: startTimeStr,
       homeSeries,
       awaySeries: homeSeries.map(complementPct),
       innings: homeRow?.innings ?? awayRow?.innings ?? [],
       livePad: homeRow?.livePad ?? awayRow?.livePad ?? 0,
-    } satisfies LiveGameCard;
-  });
+    });
+  }
+
+  return cards.sort((a, b) => a.gameId.localeCompare(b.gameId));
 }
 
 // Distinct dates (YYYY-MM-DD, ascending) that have win-probability data — the

@@ -45,8 +45,9 @@ KBO 리그 10개 구단의 시즌 누적 **승패마진**·**승률**과, 경기
 | `lib/data.ts`                                    | DB/스냅샷 조회 + 캐싱 + upsert                                            |
 | `lib/utils.ts`                                   | 유틸리티 함수                                                             |
 | `lib/dates.ts`, `lib/seasons.ts`, `lib/teams.ts` | KST 날짜 헬퍼 · 시즌 개막일/크롤 범위 · 팀 코드/색상/표기                 |
-| `components/charts/`                             | SVG 차트 (`MarginChart`, `DetailChart`)와 공용 요소·훅                    |
-| `components/live/`                               | 경기 화면 (`LiveBoard`, `LiveGameCard`, `DatePicker`)                     |
+| `components/charts/`                             | 시즌 화면 메인 컨테이너(`Dashboard`), SVG 차트(`MarginChart`, `DetailChart`), 시즌 전용 요소·훅 |
+| `components/live/`                               | 경기 화면 메인 컨테이너(`LiveScreen`), 경기 판(`LiveBoard`, `LiveGameCard` 등) |
+| `components/ui/`                                 | 프로젝트 공용/범용 UI 컴포넌트 (`SiteNav`, `Segmented`, `RangeSlider` 등) |
 | `app/api/cron/*`                                 | 일일/분당 크론 라우트                                                     |
 | `scripts/`                                       | 백필·스냅샷·진단 CLI                                                      |
 

@@ -7,13 +7,13 @@ import type { LiveGameCard } from "@/lib/live";
 import { TEAM_COLORS, getTeamShortName } from "@/lib/teams";
 import { dashed, kstYmd } from "@/lib/dates";
 import { chartGeometry, fmtMonthDay, fmtRate, fmtSigned, NEGATIVE_COLOR, NEUTRAL_COLOR, POSITIVE_COLOR, type XAxis, type YAxis } from "@/lib/chart";
-import { MarginChart } from "./charts/MarginChart";
-import { DetailChart } from "./charts/DetailChart";
-import { SiteNav } from "./SiteNav";
-import { RangeSlider } from "./RangeSlider";
-import { Segmented } from "./Segmented";
+import { MarginChart } from "./MarginChart";
+import { DetailChart } from "./DetailChart";
+import { SiteNav } from "@/components/ui/SiteNav";
+import { RangeSlider } from "@/components/ui/RangeSlider";
+import { Segmented } from "@/components/ui/Segmented";
 import { SeasonDropdown } from "./SeasonDropdown";
-import { InfoTooltip } from "./InfoTooltip";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 
 type ChartKind = "basic" | "detailed";
 

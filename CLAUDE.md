@@ -80,7 +80,7 @@ Each team's own win prob is stored; the opponent's is always `100 − ours`. The
 ### Charts are hand-rolled SVG (no charting library)
 
 - `lib/chart.ts` — **framework-free** geometry, tick generation, formatters, and nearest-point hit-testing (`pickHoverPoint`, with sticky hysteresis). Pure functions, unit-testable in principle.
-- `components/charts/` — the React layer: `MarginChart`, `DetailChart`, shared `ChartElements`, and hooks `useChartHover` / `useSmoothedDomain` / `useTooltipPosition`.
+- `components/charts/` — the React layer: `Dashboard` (page container), `MarginChart`, `DetailChart`, shared `ChartElements`, `SeasonDropdown`, and hooks `useChartHover` / `useSmoothedDomain` / `useTooltipPosition`.
 - The **detail chart** maps each plate-appearance win-prob onto the cumulative margin axis: within a game slot, 100% counts the game as a full win (+1 to margin), 0% as a loss (−1), linear in between (`DetailChart` `appendWpPoints`). The axis convention (50%→0, 100%→+1, 0%→−1) is documented at the top of `lib/winprob.ts`.
 
 ## Conventions & gotchas
