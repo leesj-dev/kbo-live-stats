@@ -12,7 +12,7 @@
   --color-amber: #f4c20d;
 
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
-  --font-sans: "Pretendard Variable", system-ui, sans-serif;
+  --font-sans: var(--font-pretendard), system-ui, sans-serif;
 }
 
 :root {
