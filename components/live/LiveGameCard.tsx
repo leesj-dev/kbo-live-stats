@@ -215,12 +215,16 @@ function PlayTooltip({
       style={{ left: `${leftPx}px`, width: `${TOOLTIP_W}px` }}
     >
       {/* scoreboard headline: win% flanks a prominent score */}
-      <div className="flex items-center justify-between tnum text-[12px] font-semibold">
-        <span>
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center tnum text-[12px] font-semibold">
+        <span className="text-left truncate">
           <span className="text-[var(--color-fg)]">{awayTeam}</span> <span style={{ color: awayColor }}>{Math.round(awayWp)}%</span>
         </span>
-        <span className="text-[18px] font-bold leading-none text-[var(--color-fg)]">{play ? `${play.awayScore} : ${play.homeScore}` : "–"}</span>
-        <span>
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center text-[18px] font-bold leading-none text-[var(--color-fg)]">
+          <span className="text-right pr-1.5">{play ? play.awayScore : "–"}</span>
+          <span>:</span>
+          <span className="text-left pl-1.5">{play ? play.homeScore : "–"}</span>
+        </div>
+        <span className="text-right truncate">
           <span style={{ color: homeColor }}>{Math.round(homeWp)}%</span> <span className="text-[var(--color-fg)]">{homeTeam}</span>
         </span>
       </div>
@@ -332,9 +336,13 @@ function GameGraph({ c }: { c: Card }) {
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
-    const fracPx = (e.clientX - rect.left) / rect.width;
+    const parentEl = svg.parentElement;
+    const layoutW = parentEl ? parentEl.clientWidth : rect.width;
+    const zoom = rect.width / layoutW;
+    const layoutPx = (e.clientX - rect.left) / zoom;
+    const fracPx = layoutPx / layoutW;
     const idx = Math.max(0, Math.min(n - 1, Math.round(((fracPx * W - P.l) / iw) * maxIdx)));
-    setHover({ idx, px: e.clientX - rect.left, w: rect.width });
+    setHover({ idx, px: layoutPx, w: layoutW });
   };
   const onLeave = () => setHover(null);
 
@@ -495,7 +503,15 @@ function GameGraph({ c }: { c: Card }) {
   );
 }
 
-export function LiveGameCard({ card }: { card: Card }) {
+export function LiveGameCard({
+  card,
+  onClick,
+  isExpanded = false,
+}: {
+  card: Card;
+  onClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
+  isExpanded?: boolean;
+}) {
   const cancelled = card.status === "cancel";
   const hasSeries = card.homeSeries.length >= 2;
   const homeColor = TEAM_COLORS[card.homeTeam] ?? "#888";
@@ -506,8 +522,18 @@ export function LiveGameCard({ card }: { card: Card }) {
   const homeWp = hasSeries ? card.homeSeries[card.homeSeries.length - 1] : null;
   const awayWp = hasSeries ? card.awaySeries[card.awaySeries.length - 1] : null;
 
+  const clickable = !!onClick;
+
   return (
-    <div className={`relative rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)]/60 p-4 ${cancelled ? "opacity-50" : ""}`}>
+    <div
+      onClick={onClick}
+      data-game-id={card.gameId}
+      className={`relative rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)]/60 p-4 ${cancelled ? "opacity-50" : ""} ${
+        clickable
+          ? "cursor-pointer transition-all duration-200 ease-out hover:scale-[1.02] hover:bg-[var(--color-panel)] hover:border-[var(--color-line-strong)] hover:shadow-lg active:scale-[0.99] hover:z-10"
+          : ""
+      }`}
+    >
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 flex flex-col gap-0.5">
           <TeamLine
@@ -525,7 +551,33 @@ export function LiveGameCard({ card }: { card: Card }) {
             season={season}
           />
         </div>
-        <StatusPill c={card} />
+        <div className="flex min-w-[52px] flex-col items-end gap-1 shrink-0">
+          <StatusPill c={card} />
+          {isExpanded && (
+            <a
+              href={`https://sports.naver.com/game/${card.gameId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="네이버 스포츠에서 보기"
+              className="inline-flex w-full items-center justify-center gap-0.5 rounded-lg border border-[var(--color-line)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-muted)] bg-[var(--color-panel)]/60 hover:text-[#03c75a] hover:border-[var(--color-line-strong)] transition-all cursor-pointer"
+            >
+              상세
+              <svg
+                className="h-2.5 w-2.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                />
+              </svg>
+            </a>
+          )}
+        </div>
       </div>
 
       {cancelled ? (

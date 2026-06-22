@@ -90,10 +90,16 @@ export async function getWinProbRows(season: number): Promise<WinProbRow[]> {
     })
     .from(teamGameWinProb)
     .where(eq(teamGameWinProb.season, season));
+  // Only games that have actually been played belong on the cumulative detail
+  // chart. 'scheduled' / 'cancel' rows are persisted purely so the LIVE board can
+  // render the upcoming slate (lib/live.ts buildScheduled); they carry no real
+  // series (flat 50%) and their dates are in the future, so they must be dropped
+  // here or they'd extend the detail axis with flat lines for unplayed games.
+  const played = rows.filter((r) => r.status === "final" || r.status === "live");
   // In-progress games are carried through as provisional rows (live=true), so the
   // detail chart can show a forming line. The season page re-renders on a poll
   // (Dashboard) to pick up fresher live state between scrapes.
-  return rows.map((r) => ({
+  return played.map((r) => ({
     team: r.team,
     gameId: r.gameId,
     gameDate: r.gameDate,

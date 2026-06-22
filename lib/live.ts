@@ -202,6 +202,16 @@ export async function fetchLiveGames(
     }
 
     if (game.statusCode !== "STARTED" && game.statusCode !== "RESULT") {
+      // Guard against transient downgrades: when a game ends, Naver's schedule can
+      // briefly report a status that is neither STARTED nor RESULT. If we already
+      // have a live/final row (with a real series) for this game, never overwrite
+      // it with an empty 'scheduled' row — that would wipe the line and flash
+      // "경기 전" until the next tick folds in the final. Only write 'scheduled'
+      // for games that haven't produced any series yet (genuinely pre-game).
+      const stored = prevByGameTeam.get(game.gameId);
+      const hasStoredSeries = stored && [...stored.values()].some((s) => s.series.length > 0);
+      const storedStatus = statusByGame.get(game.gameId);
+      if (hasStoredSeries || storedStatus === "live" || storedStatus === "final") continue;
       if (homeName && awayName) {
         const startTime = game.gameDateTime ? new Date(`${game.gameDateTime}+09:00`) : null;
         const buildScheduled = (team: string): LiveUpsertRow => ({
