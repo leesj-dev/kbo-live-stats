@@ -81,14 +81,25 @@ function appendWpPoints(opts: {
 }) {
   const { pts, team, wpGame, games, xStart, gameNo, prev, yAxis, rMin, rMax, maxPtsPerSlot, windowSize } = opts;
 
-  // An in-progress game counts toward `k` even though its provisional close sits
-  // in the draw band — otherwise its line would flatten to `prev.margin` instead
-  // of floating at the current win probability. Its win/loss is only *banked*
-  // (applyOutcome) once it finishes, so the cumulative state stays honest.
-  const k = games.filter((g) => g.live || wpOutcome(g.wpClose) !== "d").length;
-  const decided = prev.wins + prev.losses + k;
+  // Win rate only ever counts games that are (or will likely become) decided:
+  // a live game counts provisionally — it's probably headed for a decision —
+  // but a finished draw never does, since KBO win rate excludes draws from
+  // both the wins and decided-games tallies.
+  const kDecided = games.filter((g) => g.live || wpOutcome(g.wpClose) !== "d").length;
+  const decided = prev.wins + prev.losses + kDecided;
+
+  // Margin, unlike win rate, is symmetric around the 50%-win-prob toss-up, so
+  // every game's own path is worth drawing — including a finished draw's —
+  // since it necessarily lands back on `prev.margin` once win prob returns to
+  // 50% (a draw's wpClose is pinned there; see outcomePct in lib/scraper.ts).
+  // Excluding draws here is what collapsed their whole slot into a flat line.
+  const kMargin = games.length;
   const mapPct = (pctValue: number) =>
-    yAxis === "margin" ? prev.margin - k + (pctValue / 100) * (2 * k) : decided > 0 ? (prev.wins + k * (pctValue / 100)) / decided : 0;
+    yAxis === "margin"
+      ? prev.margin - kMargin + (pctValue / 100) * (2 * kMargin)
+      : decided > 0
+        ? (prev.wins + kDecided * (pctValue / 100)) / decided
+        : 0;
 
   // Merge doubleheader series into one path across the slot.
   const allWp = games.flatMap((g) => g.series);

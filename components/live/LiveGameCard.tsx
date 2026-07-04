@@ -287,7 +287,7 @@ function PlayTooltip({
   );
 }
 
-function GameGraph({ c }: { c: Card }) {
+function GameGraph({ c, onHoverChange }: { c: Card; onHoverChange?: (active: boolean) => void }) {
   const { homeSeries: home, awaySeries: away, innings } = c;
   const season = Number(c.gameDate.slice(0, 4));
   const n = home.length;
@@ -343,8 +343,12 @@ function GameGraph({ c }: { c: Card }) {
     const fracPx = layoutPx / layoutW;
     const idx = Math.max(0, Math.min(n - 1, Math.round(((fracPx * W - P.l) / iw) * maxIdx)));
     setHover({ idx, px: layoutPx, w: layoutW });
+    onHoverChange?.(true);
   };
-  const onLeave = () => setHover(null);
+  const onLeave = () => {
+    setHover(null);
+    onHoverChange?.(false);
+  };
 
   const hoverPlay =
     hover && plays && plays.length ? plays[plays.length === n ? hover.idx : Math.round((hover.idx / Math.max(1, n - 1)) * (plays.length - 1))] : null;
@@ -524,11 +528,18 @@ export function LiveGameCard({
 
   const clickable = !!onClick;
 
+  // The win-prob tooltip overflows below the card; while it's showing, raise the
+  // whole card above sibling cards (which otherwise paint on top of it — notably
+  // on mobile, where the card never gets :hover so hover:z-10 doesn't apply).
+  const [graphHover, setGraphHover] = useState(false);
+
   return (
     <div
       onClick={onClick}
       data-game-id={card.gameId}
       className={`relative rounded-2xl border border-[var(--color-line)] bg-[var(--color-panel)]/60 p-4 ${cancelled ? "opacity-50" : ""} ${
+        graphHover ? "z-30" : ""
+      } ${
         clickable
           ? "cursor-pointer transition-all duration-200 ease-out hover:scale-[1.02] hover:bg-[var(--color-panel)] hover:border-[var(--color-line-strong)] hover:shadow-lg active:scale-[0.99] hover:z-10"
           : ""
@@ -555,7 +566,7 @@ export function LiveGameCard({
           <StatusPill c={card} />
           {isExpanded && (
             <a
-              href={`https://sports.naver.com/game/${card.gameId}`}
+              href={`https://m.sports.naver.com/game/${card.gameId}`}
               target="_blank"
               rel="noopener noreferrer"
               title="네이버 스포츠에서 보기"

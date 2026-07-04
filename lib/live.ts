@@ -260,7 +260,13 @@ export async function fetchLiveGames(
 
     const inning = parsed?.inning ?? (innings.length ? innings[innings.length - 1] : 9);
     const isTop = parsed?.isTop ?? false;
-    const pad = minRemainingPAs(inning, isTop, state?.out ?? 0);
+    // Walk-off (끝내기): in the bottom of the 9th or any extra inning the game
+    // ends the instant the home team takes the lead, so there are no remaining
+    // plate appearances to reserve blank space for.
+    const hs = state?.homeScore ?? null;
+    const as = state?.awayScore ?? null;
+    const walkOff = !isTop && inning >= 9 && hs != null && as != null && hs > as;
+    const pad = walkOff ? 0 : minRemainingPAs(inning, isTop, state?.out ?? 0);
 
     const built = buildLiveRows(game, home, innings, state, pad);
     if (built.length) rows.push(...built);
