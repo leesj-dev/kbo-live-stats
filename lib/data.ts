@@ -175,12 +175,27 @@ async function readJsonSnapshot<T>(name: string): Promise<T[]> {
   }
 }
 
+// gameIds the win-prob crawler can skip because we already hold everything it
+// would produce. "Already hold" means a real series — NOT merely the presence of
+// a row: the live cron writes empty 'scheduled' placeholders before first pitch,
+// and if the crawl is interrupted (DB outage, deploy) those placeholders survive
+// with wp_series = {}. Excluding them would make the game permanently
+// un-crawlable, since every later backfill would keep skipping it.
+// Cancelled games are the one exception: they legitimately have no series and
+// never will, so they stay excluded.
 export async function getExistingWinProbGameIds(season: number, fromYmd: string, toYmd: string): Promise<string[]> {
   if (!hasDb()) return [];
   const rows = await getDb()
     .select({ gameId: teamGameWinProb.gameId })
     .from(teamGameWinProb)
-    .where(and(eq(teamGameWinProb.season, season), gte(teamGameWinProb.gameDate, dashed(fromYmd)), lte(teamGameWinProb.gameDate, dashed(toYmd))));
+    .where(
+      and(
+        eq(teamGameWinProb.season, season),
+        gte(teamGameWinProb.gameDate, dashed(fromYmd)),
+        lte(teamGameWinProb.gameDate, dashed(toYmd)),
+        sql`(coalesce(array_length(${teamGameWinProb.wpSeries}, 1), 0) > 0 or ${teamGameWinProb.status} = 'cancel')`,
+      ),
+    );
   // De-duplicate gameIds
   return Array.from(new Set(rows.map((r) => r.gameId)));
 }
