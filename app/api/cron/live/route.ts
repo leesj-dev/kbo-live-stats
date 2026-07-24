@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidateTag, revalidatePath } from "next/cache";
-import { fetchLiveGames } from "@/lib/live";
+import { fetchLiveGames, hasActiveLiveWindow, listTodayKboGames } from "@/lib/live";
 import { getWinProbRowsByDate, upsertLiveWinProb, upsertResults, upsertWinProb } from "@/lib/data";
 import { fetchGames, fetchWinProbabilities } from "@/lib/scraper";
 import { REGULAR_SEASON_START_DATES } from "@/lib/seasons";
@@ -27,10 +27,19 @@ async function handle(req: Request) {
   const today = kstYmd();
   const season = Number(today.slice(0, 4));
 
-  // Off-season: nothing to do.
+  // Off-season: nothing to do (cheap early-out before we even hit the schedule).
   const start = REGULAR_SEASON_START_DATES[season];
   if (start && today < start) {
     return NextResponse.json({ ok: true, skipped: "before-season", today });
+  }
+
+  // Schedule-driven gate (no DB access): only wake Neon when a game is live or
+  // within its window. Skips the read/upserts overnight, on off-days, after the
+  // season ends, and in seasons not yet in the table — so the compute can scale to
+  // zero instead of being kept alive by a read every couple of minutes.
+  const games = await listTodayKboGames(today);
+  if (!hasActiveLiveWindow(games, Date.now())) {
+    return NextResponse.json({ ok: true, skipped: "no-live-window", today });
   }
 
   const prev = await getWinProbRowsByDate(today);
@@ -42,7 +51,7 @@ async function handle(req: Request) {
     status: r.status,
   }));
 
-  const { rows, finishedCount, allFinishedToday } = await fetchLiveGames(season, today, prevRows);
+  const { rows, finishedCount, allFinishedToday } = await fetchLiveGames(season, today, prevRows, games);
 
   let upserted = 0;
   if (rows.length > 0) {
