@@ -67,7 +67,7 @@ Each team's own win prob is stored; the opponent's is always `100 − ours`. The
 
 `vercel.json` is empty and **carries no cron config** — Vercel Hobby cron is daily-only, so both schedules are driven by an **external scheduler (e.g. cron-job.org)** sending `Authorization: Bearer ${CRON_SECRET}`:
 - **`/api/cron/scrape`** (daily, ~midnight KST) — crawls yesterday+today results and win prob, upserts, then revalidates.
-- **`/api/cron/live`** (every minute during game hours) — **self-gating**: returns almost immediately when no game is in progress. For live games it polls only the current inning and merges onto the stored series (`lib/live.ts`); when a game finishes it folds the result into `team_game_results` through the normal finished-game pipeline.
+- **`/api/cron/live`** (~1 min, external scheduler) — **schedule-gated before any DB access**: each tick first fetches the Naver schedule (`listTodayKboGames`) and, via `hasActiveLiveWindow`, returns immediately without touching Neon unless a game is live or within `[firstPitch − 10 min, firstPitch + 6 h]`. This lets the Neon compute scale to zero overnight, on off-days, after the season, and in seasons not yet in the table (the old `today < opener` guard didn't). When active, it polls only the current inning and merges onto the stored series (`lib/live.ts`); when a game finishes it folds the result into `team_game_results` through the normal finished-game pipeline (the daily scrape backfills anything missed past the 6 h tail).
 
 `/api/revalidate` (POST, same bearer auth) purges caches without re-scraping — used by the standalone `scrape:today` script, which can't call `revalidateTag` from its own process.
 

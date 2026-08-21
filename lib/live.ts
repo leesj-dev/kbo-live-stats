@@ -143,17 +143,48 @@ function buildLiveRows(game: ScheduleGame, home: number[], innings: number[], st
   return [mk(homeName, home, homeScore, awayScore), mk(awayName, away, awayScore, homeScore)];
 }
 
+// How long before a game's scheduled first pitch the live cron should start
+// polling, and how long after first pitch a game is still treated as active. The
+// tail generously covers extra innings plus the post-final fold-in tick; anything
+// the live cron still misses is backfilled by the daily /api/cron/scrape run.
+const LIVE_WINDOW_LEAD_MS = 10 * 60 * 1000; // 10 min
+const LIVE_WINDOW_TAIL_MS = 6 * 60 * 60 * 1000; // 6 h
+
+// Today's KBO regular-season slate from the Naver schedule. No database access,
+// so the live cron can call this to decide whether it needs to touch Neon at all.
+export async function listTodayKboGames(ymd: string): Promise<ScheduleGame[]> {
+  const dash = dashed(ymd);
+  return (await listGames(ymd, ymd)).filter((g) => g.roundCode === "kbo_r" && g.gameDate === dash);
+}
+
+// Whether any game warrants touching the database this tick: one is in progress,
+// or now sits within [firstPitch − lead, firstPitch + tail]. Purely
+// schedule-driven, so the caller can skip every Neon read/write — and let the
+// compute scale to zero — overnight, on off-days, and off-season.
+export function hasActiveLiveWindow(games: ScheduleGame[], nowMs: number): boolean {
+  return games.some((g) => {
+    if (g.cancel) return false;
+    if (g.statusCode === "STARTED") return true;
+    if (!g.gameDateTime) return false;
+    const start = Date.parse(`${g.gameDateTime}+09:00`);
+    if (Number.isNaN(start)) return false;
+    return nowMs >= start - LIVE_WINDOW_LEAD_MS && nowMs <= start + LIVE_WINDOW_TAIL_MS;
+  });
+}
+
 /**
  * Crawl all in-progress games for `ymd` (YYYYMMDD, KST) and fold in any games
  * that have just finished. `prevRows` are the day's already-stored rows.
+ * `slate` may be a pre-fetched schedule (from listTodayKboGames) to avoid a
+ * second Naver call when the caller already gated on it.
  */
 export async function fetchLiveGames(
   season: number,
   ymd: string,
   prevRows: PrevRow[],
+  slate?: ScheduleGame[],
 ): Promise<{ rows: LiveUpsertRow[]; finishedCount: number; allFinishedToday: boolean }> {
-  const dash = dashed(ymd);
-  const games = (await listGames(ymd, ymd)).filter((g) => g.roundCode === "kbo_r" && g.gameDate === dash);
+  const games = slate ?? (await listTodayKboGames(ymd));
 
   // Index prior rows: per-game home series (to merge) and per-game status (a game
   // counts as 'final' only when none of its rows are still 'live').
