@@ -241,6 +241,20 @@ function outcomePct(game: ScheduleGame, isHome: boolean): number {
   return won ? 100 : 0;
 }
 
+// Naver's own win-rate box can get stuck on "업데이트중" (updating) after a
+// walk-off (끝내기): the winning run scores mid-plate-appearance, so the relay
+// never logs a final point reflecting the decided outcome and the series stalls
+// short of 100%/0%. Since the outcome is already known, force the series (and
+// its aligned innings) to end there — this is what the chart line and tooltip
+// sparkline actually draw, so `wpClose` alone isn't enough to fix the visual.
+function withDeterministicClose(series: number[], innings: number[], closePct: number): { series: number[]; innings: number[] } {
+  if (!series.length || Math.abs(series[series.length - 1] - closePct) < 1) return { series, innings };
+  return {
+    series: [...series, closePct],
+    innings: [...innings, innings[innings.length - 1]],
+  };
+}
+
 /**
  * Crawl live win probabilities for finished KBO regular-season games within
  * [fromYmd, toYmd] (inclusive, YYYYMMDD) and reduce each to per-team win-prob
@@ -305,7 +319,9 @@ export async function fetchWinProbabilities(
       ] as const) {
         const team = code ? CODE_TO_TEAM[code] : undefined;
         if (!team || series.length < 3) continue;
-        const e = extremes(series, outcomePct(game, isHome));
+        const target = outcomePct(game, isHome);
+        const fixed = withDeterministicClose(series, wp.innings, target);
+        const e = extremes(fixed.series, target);
         rows.push({
           team,
           gameId: game.gameId,
@@ -314,8 +330,8 @@ export async function fetchWinProbabilities(
           wpHigh: e.high,
           wpLow: e.low,
           wpClose: e.close,
-          series,
-          innings: wp.innings,
+          series: fixed.series,
+          innings: fixed.innings,
           teamScore: isHome ? game.homeTeamScore : game.awayTeamScore,
           opponentScore: isHome ? game.awayTeamScore : game.homeTeamScore,
         });
