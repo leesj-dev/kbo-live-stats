@@ -170,7 +170,6 @@ function buildSeriesList(
   rMax: number,
   maxPtsPerSlot: number,
   windowSize: number,
-  unfinishedTeamsToday: Set<string>,
   todayDate: string,
 ): Series[] {
   const list: Series[] = [];
@@ -201,16 +200,19 @@ function buildSeriesList(
     } else {
       let lastPlayed: WpGame | null = null;
       (winProb.byDate[team] ?? []).forEach((c, j) => {
-        let game = c;
-        if (game && game.live) {
-          game = null;
-        }
-        if (game) {
-          const games = game.subGames ?? [game];
+        // A still-in-progress game's date never gets a segment — not even a flat
+        // carry-over — until it's decided. Checked on `c` directly (not by
+        // comparing to today's date): a game can be stuck on status='live' past
+        // its own date if a cron tick is missed (see the stuck-scheduled-row
+        // incident lib/data.ts documents), and that stale row must stay hidden
+        // too, not just today's.
+        if (c && c.live) return;
+        if (c) {
+          const games = c.subGames ?? [c];
           appendWpPoints({
             pts,
             team,
-            wpGame: game,
+            wpGame: c,
             games,
             xStart: j - 1,
             gameNo: null,
@@ -222,14 +224,18 @@ function buildSeriesList(
             windowSize,
           });
           for (const g of games) applyOutcome(cum, g.wpClose);
-          lastPlayed = game;
+          lastPlayed = c;
         } else if (lastPlayed && j >= rMin - 1 && j <= rMax + 1) {
           // Flat carry-over point for a day without a game, anchored to the
           // last played game so the tooltip still has something to show.
-          const date = winProb.dates[j];
-          if (date === todayDate && unfinishedTeamsToday.has(team)) {
-            return;
-          }
+          // Today is excluded: unlike a past off-day (cancelled or genuinely
+          // no game — settled, nothing more will happen), today isn't over —
+          // this team's own game may just not have started yet. Stamping a
+          // flat point onto it would falsely declare the day decided, and
+          // since today's date only entered the axis because some *other*
+          // team is live, every idle team would flatline in lockstep the
+          // moment any single game starts.
+          if (winProb.dates[j] === todayDate) return;
           const decided = cum.wins + cum.losses;
           pts.push({
             x: j,
@@ -238,7 +244,7 @@ function buildSeriesList(
             smoothWp: lastPlayed.wpClose,
             inning: 9,
             game: null,
-            date,
+            date: winProb.dates[j],
             c: lastPlayed,
             team,
           });
@@ -265,7 +271,6 @@ export function DetailChart({
   width,
   xRange,
   animate = true,
-  unfinishedTeamsToday,
   todayDate,
 }: {
   winProb: WinProbPayload;
@@ -278,7 +283,6 @@ export function DetailChart({
   width: number;
   xRange: [number, number];
   animate?: boolean;
-  unfinishedTeamsToday: Set<string>;
   todayDate: string;
 }) {
   const dates = winProb.dates;
@@ -321,8 +325,8 @@ export function DetailChart({
   }, [visibleSpan]);
 
   const seriesList = useMemo(
-    () => buildSeriesList(winProb, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot, windowSize, unfinishedTeamsToday, todayDate),
-    [winProb, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot, windowSize, unfinishedTeamsToday, todayDate],
+    () => buildSeriesList(winProb, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot, windowSize, todayDate),
+    [winProb, visibleTeams, xAxis, yAxis, rMin, rMaxCeil, maxPtsPerSlot, windowSize, todayDate],
   );
 
   const xMin = rMin - 1;

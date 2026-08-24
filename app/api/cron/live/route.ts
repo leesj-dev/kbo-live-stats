@@ -77,12 +77,17 @@ async function handle(req: Request) {
             console.error("Failed to run final integrity check scrape for win probabilities:", wpErr);
           }
         }
-
-        revalidateTag("chart-payload");
-        revalidateTag("winprob-payload");
       } catch (err) {
         console.error("Failed to fetch/upsert finished game results during live cron:", err);
       }
+      // Always purge, even if the fetch/upsert above failed: this game is now
+      // 'final' in team_game_win_prob (upsertLiveWinProb already ran above), so
+      // the live cron will never retry its result fold-in on a later tick — the
+      // stale season-chart cache would otherwise sit until the next daily
+      // /api/cron/scrape run (up to ~24h). Re-invalidating costs only a cache
+      // recompute, which is safe even if nothing new actually got written.
+      revalidateTag("chart-payload");
+      revalidateTag("winprob-payload");
       revalidatePath("/[season]", "page");
     }
   }

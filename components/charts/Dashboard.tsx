@@ -464,7 +464,6 @@ export function Dashboard({
                     width={width}
                     xRange={range}
                     animate={!isPlaying && shouldAnimate}
-                    unfinishedTeamsToday={unfinishedTeamsToday}
                     todayDate={todayDate}
                   />
                 ) : (
