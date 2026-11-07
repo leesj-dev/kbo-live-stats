@@ -2,7 +2,7 @@ import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { dashed, kstYmd, formatKstDateTime } from "./dates";
 import { REGULAR_SEASON_START_DATES } from "./seasons";
 import { getDb, hasDb } from "./db";
-import { teamGameResults, teamGameWinProb } from "./db/schema";
+import { teamGameResults, teamGameWinProb, gamePlays } from "./db/schema";
 import type { GameResultRow } from "./scraper";
 import { buildChartPayload, type ChartPayload, type StatRow } from "./stats";
 import { buildWinProbPayload, type WinProbPayload, type WinProbRow } from "./winprob";
@@ -11,6 +11,7 @@ import { CODE_TO_TEAM } from "./teams";
 import { complementPct } from "./utils";
 import type { LiveUpsertRow, LiveGameCard } from "./live";
 import type { NewTeamGameWinProb } from "./db/schema";
+import type { PlayDetail } from "./plays";
 import { unstable_cache } from "next/cache";
 
 // Read raw rows from Postgres, or from a local JSON snapshot when no database
@@ -429,3 +430,34 @@ export const getCachedGameDates = unstable_cache(
   ["game-dates-list"],
   { revalidate: false, tags: ["winprob-payload"] },
 );
+
+// --- Game Plays (Plate Appearance Details for Tooltips) ----------------------
+
+export async function getGamePlaysFromDb(gameId: string): Promise<PlayDetail[] | null> {
+  if (!hasDb()) return null;
+  const rows = await getDb()
+    .select({ plays: gamePlays.plays })
+    .from(gamePlays)
+    .where(eq(gamePlays.gameId, gameId))
+    .limit(1);
+  if (rows.length === 0 || !rows[0].plays) return null;
+  return rows[0].plays as PlayDetail[];
+}
+
+export async function upsertGamePlays(gameId: string, plays: PlayDetail[]): Promise<void> {
+  if (!hasDb() || plays.length === 0) return;
+  await getDb()
+    .insert(gamePlays)
+    .values({
+      gameId,
+      plays,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: gamePlays.gameId,
+      set: {
+        plays: sql`excluded.plays`,
+        updatedAt: sql`excluded.updated_at`,
+      },
+    });
+}

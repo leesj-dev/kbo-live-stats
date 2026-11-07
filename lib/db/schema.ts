@@ -10,6 +10,7 @@ import {
   timestamp,
   unique,
   index,
+  jsonb,
 } from "drizzle-orm/pg-core";
 
 // One row per tracked team's perspective of a finished regular-season game.
@@ -83,3 +84,14 @@ export const teamGameWinProb = pgTable(
 
 export type TeamGameWinProb = typeof teamGameWinProb.$inferSelect;
 export type NewTeamGameWinProb = typeof teamGameWinProb.$inferInsert;
+
+// Per-plate detail for hover tooltips. Stored in DB so hover requests are instant
+// and do not depend on real-time external network access to Naver from Vercel.
+export const gamePlays = pgTable("game_plays", {
+  gameId: text("game_id").primaryKey(),
+  plays: jsonb("plays").notNull().default([]),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type GamePlays = typeof gamePlays.$inferSelect;
+export type NewGamePlays = typeof gamePlays.$inferInsert;
