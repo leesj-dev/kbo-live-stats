@@ -59,21 +59,29 @@ export async function GET(req: Request) {
     results.tlsError = e.message;
   }
 
-  // 4. Test fetch with different User-Agents
-  const testUrl = "https://api-gw.sports.naver.com/schedule/games?fields=basic,schedule,baseball&upperCategoryId=kbaseball&categoryId=kbo&fromDate=2026-11-07&toDate=2026-11-07&size=500";
-  try {
-    const res = await fetch(testUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-        Referer: "https://m.sports.naver.com/",
-      },
-      signal: AbortSignal.timeout(4000),
-    });
-    results.fetchStatus = res.status;
-    results.fetchOk = res.ok;
-  } catch (e: any) {
-    results.fetchError = e.message;
+  // 4. Test different Naver hosts
+  const testHosts = [
+    "https://m.sports.naver.com",
+    "https://sports.news.naver.com",
+    "https://apis.naver.com",
+    "https://api-gw.sports.naver.com/schedule/games?fields=basic,schedule,baseball&upperCategoryId=kbaseball&categoryId=kbo&fromDate=2026-11-07&toDate=2026-11-07&size=500"
+  ];
+  const hostResults: Record<string, any> = {};
+  for (const url of testHosts) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Referer: "https://m.sports.naver.com/",
+        },
+        signal: AbortSignal.timeout(3000),
+      });
+      hostResults[url] = { status: res.status, ok: res.ok };
+    } catch (e: any) {
+      hostResults[url] = { error: e.message };
+    }
   }
+  results.hosts = hostResults;
 
   return NextResponse.json(results);
 }
