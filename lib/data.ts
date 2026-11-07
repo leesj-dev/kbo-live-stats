@@ -152,15 +152,28 @@ export async function getWinProbPayload(season: number, rankedTeams?: string[]):
 // Idempotent insert keyed on (team, gameId).
 export async function upsertWinProb(season: number, rows: WinProbRow[]): Promise<number> {
   if (rows.length === 0) return 0;
-  const values: NewTeamGameWinProb[] = rows.map(({ series, innings, ...r }) => ({ season, ...r, wpSeries: series, wpInnings: innings }));
+  const values: NewTeamGameWinProb[] = rows.map(({ series, innings, ...r }) => ({
+    season,
+    ...r,
+    wpSeries: series,
+    wpInnings: innings,
+    status: "final",
+  }));
   const inserted = await getDb()
     .insert(teamGameWinProb)
     .values(values)
     .onConflictDoUpdate({
       target: [teamGameWinProb.team, teamGameWinProb.gameId],
       set: {
+        wpOpen: sql`excluded.wp_open`,
+        wpHigh: sql`excluded.wp_high`,
+        wpLow: sql`excluded.wp_low`,
+        wpClose: sql`excluded.wp_close`,
+        wpSeries: sql`excluded.wp_series`,
+        wpInnings: sql`excluded.wp_innings`,
         teamScore: sql`excluded.team_score`,
         opponentScore: sql`excluded.opponent_score`,
+        status: sql`excluded.status`,
       },
     })
     .returning({ id: teamGameWinProb.id });
