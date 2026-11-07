@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { revalidateTag, revalidatePath } from "next/cache";
 import { fetchLiveGames, hasActiveLiveWindow, listTodayKboGames } from "@/lib/live";
+import type { ScheduleGame } from "@/lib/naver";
 import { getWinProbRowsByDate, upsertLiveWinProb, upsertResults, upsertWinProb } from "@/lib/data";
 import { fetchGames, fetchWinProbabilities } from "@/lib/scraper";
-import { REGULAR_SEASON_START_DATES } from "@/lib/seasons";
 import { kstYmd } from "@/lib/dates";
 
 // Hit every minute by an external scheduler (cron-job.org) during game hours.
@@ -27,17 +27,19 @@ async function handle(req: Request) {
   const today = kstYmd();
   const season = Number(today.slice(0, 4));
 
-  // Off-season: nothing to do (cheap early-out before we even hit the schedule).
-  const start = REGULAR_SEASON_START_DATES[season];
-  if (start && today < start) {
-    return NextResponse.json({ ok: true, skipped: "before-season", today });
-  }
-
   // Schedule-driven gate (no DB access): only wake Neon when a game is live or
   // within its window. Skips the read/upserts overnight, on off-days, after the
-  // season ends, and in seasons not yet in the table — so the compute can scale to
+  // season ends, and during weather postponements/delays — so the compute can scale to
   // zero instead of being kept alive by a read every couple of minutes.
-  const games = await listTodayKboGames(today);
+  // Checking today's schedule via naverFetch takes ~30-100ms with zero DB access.
+  let games: ScheduleGame[] = [];
+  try {
+    games = await listTodayKboGames(today);
+  } catch (err) {
+    console.error("Failed to fetch today games schedule during live cron:", err);
+    return NextResponse.json({ ok: false, error: "schedule-fetch-failed", today }, { status: 502 });
+  }
+
   if (!hasActiveLiveWindow(games, Date.now())) {
     return NextResponse.json({ ok: true, skipped: "no-live-window", today });
   }

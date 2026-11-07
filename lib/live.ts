@@ -6,7 +6,7 @@
 // re-written as status='final' via the existing finished-game pipeline.
 
 import { dashed } from "./dates";
-import { listGames, type ScheduleGame } from "./naver";
+import { listGames, isTrackedKboGame, type ScheduleGame } from "./naver";
 import { CODE_TO_TEAM } from "./teams";
 import { fetchRelayInning, fetchGameWinProb, fetchWinProbabilities, type RelayGameState } from "./scraper";
 import { clampPct, complementPct, sleep } from "./utils";
@@ -150,11 +150,11 @@ function buildLiveRows(game: ScheduleGame, home: number[], innings: number[], st
 const LIVE_WINDOW_LEAD_MS = 10 * 60 * 1000; // 10 min
 const LIVE_WINDOW_TAIL_MS = 6 * 60 * 60 * 1000; // 6 h
 
-// Today's KBO regular-season slate from the Naver schedule. No database access,
+// Today's KBO regular-season and postseason slate from the Naver schedule. No database access,
 // so the live cron can call this to decide whether it needs to touch Neon at all.
 export async function listTodayKboGames(ymd: string): Promise<ScheduleGame[]> {
   const dash = dashed(ymd);
-  return (await listGames(ymd, ymd)).filter((g) => g.roundCode === "kbo_r" && g.gameDate === dash);
+  return (await listGames(ymd, ymd)).filter((g) => isTrackedKboGame(g.roundCode) && g.gameDate === dash);
 }
 
 // Whether any game warrants touching the database this tick: one is in progress,
@@ -163,7 +163,7 @@ export async function listTodayKboGames(ymd: string): Promise<ScheduleGame[]> {
 // compute scale to zero — overnight, on off-days, and off-season.
 export function hasActiveLiveWindow(games: ScheduleGame[], nowMs: number): boolean {
   return games.some((g) => {
-    if (g.cancel) return false;
+    if (g.cancel || g.statusCode === "CANCEL" || g.statusCode === "CANCELED") return false;
     if (g.statusCode === "STARTED") return true;
     if (!g.gameDateTime) return false;
     const start = Date.parse(`${g.gameDateTime}+09:00`);

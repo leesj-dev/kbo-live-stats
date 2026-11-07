@@ -95,7 +95,19 @@ export async function getWinProbRows(season: number): Promise<WinProbRow[]> {
   // render the upcoming slate (lib/live.ts buildScheduled); they carry no real
   // series (flat 50%) and their dates are in the future, so they must be dropped
   // here or they'd extend the detail axis with flat lines for unplayed games.
-  const played = rows.filter((r) => r.status === "final" || r.status === "live");
+  //
+  // Postseason and preseason games belong ONLY on the 경기 승리확률 (LIVE board), NOT on the
+  // 시즌 승률 (season-long cumulative margin / rate chart).
+  // - Postseason gameIds start with non-year prefixes (3333, 4444, 5555, 6666, 7777).
+  // - Preseason game dates are strictly before the regular season opening date (REGULAR_SEASON_START_DATES[season]).
+  const start = REGULAR_SEASON_START_DATES[season];
+  const startDash = start ? dashed(start) : null;
+  const played = rows.filter(
+    (r) =>
+      (r.status === "final" || r.status === "live") &&
+      r.gameId.startsWith(String(season)) &&
+      (!startDash || r.gameDate >= startDash),
+  );
   // In-progress games are carried through as provisional rows (live=true), so the
   // detail chart can show a forming line. The season page re-renders on a poll
   // (Dashboard) to pick up fresher live state between scrapes.

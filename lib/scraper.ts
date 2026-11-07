@@ -1,6 +1,6 @@
 import { CODE_TO_TEAM } from "./teams";
 import { dashed } from "./dates";
-import { listGames, naverHeaders, type ScheduleGame } from "./naver";
+import { listGames, naverHeaders, naverFetch, isRegularSeason, isTrackedKboGame, type ScheduleGame } from "./naver";
 import { clampPct, complementPct, sleep, jitter } from "./utils";
 import type { WinProbRow } from "./winprob";
 
@@ -36,7 +36,7 @@ export async function fetchGames(season: number, fromYmd: string, toYmd: string)
   const seen = new Set<string>(); // `${gameId}:${team}`
 
   for (const game of await listGames(fromYmd, toYmd)) {
-    if (game.roundCode !== "kbo_r") continue; // exclude preseason/postseason
+    if (!isRegularSeason(game.roundCode)) continue; // regular season only (exclude preseason and postseason from season standings)
     if (game.gameDate < fromDash || game.gameDate > toDash) continue;
     if (game.cancel) continue; // skip cancelled
     if (game.statusCode !== "RESULT") continue; // skip unfinished
@@ -165,7 +165,9 @@ export async function fetchRelayInning(gameId: string, inning: number): Promise<
   const referer = `https://m.sports.naver.com/game/${gameId}`;
   const base = WINPROB_CANDIDATES[0].path.replace("{id}", gameId);
   try {
-    const res = await fetch(`${base}?inning=${inning}`, { headers: naverHeaders(referer), cache: "no-store" });
+    const res = await naverFetch(`${base}?inning=${inning}`, {
+      headers: { Referer: referer },
+    });
     if (!res.ok) return { points: [], state: null };
     const json = await res.json();
     return { points: extractInningPoints(json), state: extractGameState(json) };
@@ -189,11 +191,10 @@ export async function fetchGameWinProb(gameId: string): Promise<GameWinProb | nu
   const byNo = new Map<number, { home: number; inn: number }>(); // no → point
 
   for (let inning = 1; inning <= MAX_INNING; inning++) {
-    let res: Response;
+    let res: Awaited<ReturnType<typeof naverFetch>>;
     try {
-      res = await fetch(`${base}?inning=${inning}`, {
-        headers: naverHeaders(referer),
-        cache: "no-store",
+      res = await naverFetch(`${base}?inning=${inning}`, {
+        headers: { Referer: referer },
       });
     } catch {
       continue;
@@ -279,7 +280,7 @@ export async function fetchWinProbabilities(
   const rows: WinProbRow[] = [];
 
   let games = (await listGames(fromYmd, toYmd)).filter(
-    (g) => g.roundCode === "kbo_r" && !g.cancel && g.statusCode === "RESULT" && g.gameDate >= fromDash && g.gameDate <= toDash,
+    (g) => isTrackedKboGame(g.roundCode) && !g.cancel && g.statusCode === "RESULT" && g.gameDate >= fromDash && g.gameDate <= toDash,
   );
 
   if (opts.excludeGameIds) {
@@ -356,7 +357,9 @@ export async function probeWinProbEndpoints(
   for (const { name, path } of WINPROB_CANDIDATES) {
     const url = path.replace("{id}", gameId);
     try {
-      const res = await fetch(url, { headers: naverHeaders(referer), cache: "no-store" });
+      const res = await naverFetch(url, {
+        headers: { Referer: referer },
+      });
       const text = await res.text();
       let seriesLen = 0;
       try {

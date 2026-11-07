@@ -4,7 +4,7 @@
 // the plate result, and any runs scored. Fetched on demand (lazily, per game) by
 // /api/live/game/[gameId]; not stored, so it works the same for live and past games.
 
-import { naverHeaders } from "./naver";
+import { naverHeaders, naverFetch } from "./naver";
 import { clampPct, sleep } from "./utils";
 
 const GAME_BASE = "https://api-gw.sports.naver.com/schedule/games";
@@ -139,7 +139,9 @@ export async function fetchGamePlays(gameId: string): Promise<PlayDetail[]> {
   for (let inn = 1; inn <= MAX_INNING; inn++) {
     let json: unknown;
     try {
-      const res = await fetch(`${GAME_BASE}/${gameId}/relay?inning=${inn}`, { headers: naverHeaders(referer), cache: "no-store" });
+      const res = await naverFetch(`${GAME_BASE}/${gameId}/relay?inning=${inn}`, {
+        headers: { Referer: referer },
+      });
       if (!res.ok) continue;
       json = await res.json();
     } catch {

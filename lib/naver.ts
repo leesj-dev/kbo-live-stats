@@ -1,6 +1,8 @@
 // Shared Naver Sports access layer: realistic browser headers (so requests are
 // not flagged as a bot) and a schedule enumerator used by both scrapers in
 // lib/scraper.ts (game results and live win probability).
+import https from "node:https";
+import { dashed } from "./dates";
 
 const SCHEDULE_URL = "https://api-gw.sports.naver.com/schedule/games";
 
@@ -16,19 +18,69 @@ const USER_AGENTS = [
 
 const UA = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
-// Headers that mirror a real browser hitting the Naver Sports SPA. The API
-// gateway is sensitive to a missing Referer/Origin, so we always send the
-// m.sports.naver.com origin that the live game center is served from.
-export function naverHeaders(referer = "https://m.sports.naver.com/"): HeadersInit {
+// Headers that mirror a real browser hitting the Naver Sports SPA.
+export function naverHeaders(referer = "https://m.sports.naver.com/"): Record<string, string> {
   return {
     "User-Agent": UA,
     Accept: "application/json, text/plain, */*",
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
     Referer: referer,
     Origin: "https://m.sports.naver.com",
-    "content-type": "application/json",
-    charset: "utf-8",
+    "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"macOS"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
   };
+}
+
+export type NaverFetchResponse = {
+  ok: boolean;
+  status: number;
+  json: <T = unknown>() => Promise<T>;
+  text: () => Promise<string>;
+};
+
+// Reliable HTTP/1.1 client with browser ciphers to prevent TLS/H2 hangs with Naver's API gateway.
+export function naverFetch(
+  url: string,
+  options: { headers?: Record<string, string>; timeout?: number } = {},
+): Promise<NaverFetchResponse> {
+  return new Promise((resolve, reject) => {
+    const headers = {
+      ...naverHeaders(options.headers?.Referer),
+      ...options.headers,
+    };
+    const req = https.get(
+      url,
+      {
+        headers,
+        ciphers: "DEFAULT",
+        timeout: options.timeout ?? 8000,
+      },
+      (res) => {
+        let data = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          data += chunk;
+        });
+        res.on("end", () => {
+          resolve({
+            ok: res.statusCode != null && res.statusCode >= 200 && res.statusCode < 300,
+            status: res.statusCode ?? 0,
+            json: async () => JSON.parse(data),
+            text: async () => data,
+          });
+        });
+      },
+    );
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error(`Request timed out for ${url}`));
+    });
+    req.on("error", reject);
+  });
 }
 
 export type ScheduleGame = {
@@ -41,10 +93,27 @@ export type ScheduleGame = {
   statusCode?: string; // STARTED while live, RESULT when finished
   statusInfo?: string; // "10회말" while live, "경기종료" etc.
   cancel?: boolean;
-  roundCode?: string; // kbo_r for regular season
+  roundCode?: string; // kbo_r for regular, kbo_p/kbo_ps_* for postseason, kbo_e/kbo_s for preseason
   homeTeamScore?: number;
   awayTeamScore?: number;
 };
+
+export function isRegularSeason(roundCode?: string): boolean {
+  return roundCode === "kbo_r";
+}
+
+export function isPostseason(roundCode?: string): boolean {
+  if (!roundCode) return false;
+  return roundCode === "kbo_p" || roundCode.startsWith("kbo_ps");
+}
+
+export function isPreseason(roundCode?: string): boolean {
+  return roundCode === "kbo_e" || roundCode === "kbo_s";
+}
+
+export function isTrackedKboGame(roundCode?: string): boolean {
+  return isRegularSeason(roundCode) || isPostseason(roundCode) || isPreseason(roundCode);
+}
 
 type RawGame = Partial<ScheduleGame>;
 
@@ -71,9 +140,9 @@ export function monthsBetween(fromYmd: string, toYmd: string): [number, number][
   return out;
 }
 
-// Fetch the raw KBO schedule for [fromYmd, toYmd] (inclusive, YYYYMMDD) one
-// calendar month per request, returning every game (regardless of status).
-// Callers filter for what they need.
+// Fetch the raw KBO schedule for [fromYmd, toYmd] (inclusive, YYYYMMDD).
+// When fromYmd === toYmd (e.g. live cron checks today), it fetches just that single
+// day directly in ~30-100ms. For multi-day ranges, it fetches one calendar month per request.
 export async function listGames(
   fromYmd: string,
   toYmd: string,
@@ -81,24 +150,34 @@ export async function listGames(
   const out: ScheduleGame[] = [];
   const seen = new Set<string>();
 
-  for (const [year, month] of monthsBetween(fromYmd, toYmd)) {
+  const dateRanges: { from: string; to: string }[] = [];
+  if (fromYmd === toYmd) {
+    const d = dashed(fromYmd);
+    dateRanges.push({ from: d, to: d });
+  } else {
+    for (const [year, month] of monthsBetween(fromYmd, toYmd)) {
+      dateRanges.push({
+        from: `${year}-${String(month).padStart(2, "0")}-01`,
+        to: `${year}-${String(month).padStart(2, "0")}-${String(
+          lastDayOfMonth(year, month),
+        ).padStart(2, "0")}`,
+      });
+    }
+  }
+
+  for (const range of dateRanges) {
     const params = new URLSearchParams({
       fields: "basic,schedule,baseball",
       upperCategoryId: "kbaseball",
       categoryId: "kbo",
-      fromDate: `${year}-${String(month).padStart(2, "0")}-01`,
-      toDate: `${year}-${String(month).padStart(2, "0")}-${String(
-        lastDayOfMonth(year, month),
-      ).padStart(2, "0")}`,
+      fromDate: range.from,
+      toDate: range.to,
       size: "500",
     });
 
-    const res = await fetch(`${SCHEDULE_URL}?${params.toString()}`, {
-      headers: naverHeaders(),
-      cache: "no-store",
-    });
+    const res = await naverFetch(`${SCHEDULE_URL}?${params.toString()}`);
     if (!res.ok) {
-      throw new Error(`Naver schedule ${res.status} for ${year}-${month}`);
+      throw new Error(`Naver schedule ${res.status} for ${range.from}..${range.to}`);
     }
     const json = (await res.json()) as { result?: { games?: RawGame[] } };
     for (const g of json.result?.games ?? []) {
