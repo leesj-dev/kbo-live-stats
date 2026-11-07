@@ -26,23 +26,31 @@ async function handle(req: Request) {
 
   const today = kstYmd();
   const season = Number(today.slice(0, 4));
+  const month = today.slice(4, 6);
+
+  // Winter off-season early-out: Dec, Jan, Feb have zero KBO games (physically impossible in winter).
+  // Returns immediately with 200 OK without touching network or DB.
+  if (month === "12" || month === "01" || month === "02") {
+    return NextResponse.json({ ok: true, skipped: "winter-offseason", today });
+  }
 
   // Schedule-driven gate (no DB access): only wake Neon when a game is live or
   // within its window. Skips the read/upserts overnight, on off-days, after the
   // season ends, and during weather postponements/delays — so the compute can scale to
   // zero instead of being kept alive by a read every couple of minutes.
-  // Checking today's schedule via naverFetch takes ~30-100ms with zero DB access.
   let games: ScheduleGame[] = [];
   try {
     games = await listTodayKboGames(today);
   } catch (err) {
     console.error("Failed to fetch today games schedule during live cron:", err);
+    // Return 200 with skipped so external schedulers (cron-job.org) don't register
+    // false-alarm failures and auto-disable the job during off-season or transient network blips.
     return NextResponse.json({
-      ok: false,
-      error: "schedule-fetch-failed",
+      ok: true,
+      skipped: "schedule-unavailable",
       detail: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
       today,
-    }, { status: 502 });
+    });
   }
 
   if (!hasActiveLiveWindow(games, Date.now())) {

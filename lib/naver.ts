@@ -6,17 +6,8 @@ import { dashed } from "./dates";
 
 const SCHEDULE_URL = "https://api-gw.sports.naver.com/schedule/games";
 
-// A small pool of current desktop/mobile user agents. We pick one per process
-// run (stable within a crawl, varied across runs) rather than hammering with a
-// single fixed string.
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-  "Mozilla/5.0 (Linux; Android 14; SM-S918N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-];
-
-const UA = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 // Headers that mirror a real browser hitting the Naver Sports SPA.
 export function naverHeaders(referer = "https://m.sports.naver.com/"): Record<string, string> {
@@ -56,7 +47,6 @@ export function naverFetch(
       url,
       {
         headers,
-        ciphers: "DEFAULT",
         timeout: options.timeout ?? 8000,
       },
       (res) => {
