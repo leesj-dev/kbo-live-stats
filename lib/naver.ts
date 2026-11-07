@@ -47,6 +47,7 @@ export function naverFetch(
       url,
       {
         headers,
+        ciphers: "DEFAULT",
         timeout: options.timeout ?? 8000,
       },
       (res) => {
