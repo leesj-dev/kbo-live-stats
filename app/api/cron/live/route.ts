@@ -37,7 +37,12 @@ async function handle(req: Request) {
     games = await listTodayKboGames(today);
   } catch (err) {
     console.error("Failed to fetch today games schedule during live cron:", err);
-    return NextResponse.json({ ok: false, error: "schedule-fetch-failed", today }, { status: 502 });
+    return NextResponse.json({
+      ok: false,
+      error: "schedule-fetch-failed",
+      detail: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+      today,
+    }, { status: 502 });
   }
 
   if (!hasActiveLiveWindow(games, Date.now())) {
