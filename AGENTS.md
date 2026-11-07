@@ -23,6 +23,8 @@ npm run snapshot -- 2025          # write data/2025.json for offline (no-DB) pre
 npm run snapshot:winprob -- 2025 [--mock]  # data/2025-winprob.json (--mock = synthetic, no network)
 npm run probe:winprob [-- <gameId>]   # diagnose the relay endpoint shape
 npm run verify:winprob -- <gameId>    # dump one game's extracted win-prob series to eyeball vs Naver
+npm run test:proxy -- <url>           # test Cloudflare Worker proxy against Naver
+npm run deploy:proxy                  # deploy Cloudflare Worker proxy via wrangler
 ```
 
 Notes:
@@ -39,8 +41,10 @@ A KBO baseball tracker with **two independent data products** that share one ups
 ### Data flow
 
 ```
-Naver Sports API ─┬─ lib/naver.ts   (schedule enumeration + browser-like headers)
-                  └─ lib/scraper.ts (per-plate win-prob via the relay endpoint)
+Naver Sports API (or Cloudflare Worker proxy via NAVER_PROXY_URL)
+        │
+   lib/naver.ts   (schedule enumeration + browser-like headers)
+   lib/scraper.ts (per-plate win-prob via the relay endpoint)
         │
         ▼  (cron / scripts call the scrapers, then upsert)
    Neon Postgres ── lib/db/schema.ts: team_game_results, team_game_win_prob

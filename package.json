@@ -15,7 +15,9 @@
     "snapshot:winprob": "tsx scripts/snapshot-winprob.ts",
     "probe:winprob": "tsx scripts/probe-winprob.ts",
     "db:push": "drizzle-kit push",
-    "verify:winprob": "tsx scripts/verify-winprob.ts"
+    "verify:winprob": "tsx scripts/verify-winprob.ts",
+    "test:proxy": "tsx scripts/test-proxy.ts",
+    "deploy:proxy": "wrangler deploy --config cloudflare-worker/wrangler.toml"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
