@@ -34,26 +34,17 @@ export type NaverFetchResponse = {
 };
 
 // Reliable HTTP/1.1 client with browser ciphers to prevent TLS/H2 hangs with Naver's API gateway.
-// Automatically routes via NAVER_PROXY_URL (e.g. Cloudflare Worker) if configured.
 export function naverFetch(
   url: string,
   options: { headers?: Record<string, string>; timeout?: number } = {},
 ): Promise<NaverFetchResponse> {
-  const proxyUrl = process.env.NAVER_PROXY_URL?.replace(/\/$/, "");
-  const targetUrl = proxyUrl
-    ? url.replace("https://api-gw.sports.naver.com", proxyUrl)
-    : url;
-
   return new Promise((resolve, reject) => {
-    const headers: Record<string, string> = {
+    const headers = {
       ...naverHeaders(options.headers?.Referer),
       ...options.headers,
     };
-    if (proxyUrl && process.env.NAVER_PROXY_KEY) {
-      headers["x-proxy-key"] = process.env.NAVER_PROXY_KEY;
-    }
     const req = https.get(
-      targetUrl,
+      url,
       {
         headers,
         ciphers: "DEFAULT",

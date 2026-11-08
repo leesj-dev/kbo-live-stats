@@ -1,7 +1,0 @@
-name = "kbo-naver-proxy"
-main = "src/index.ts"
-compatibility_date = "2024-04-01"
-
-# To require an authentication key, uncomment and set PROXY_KEY:
-# [vars]
-# PROXY_KEY = "your-secret-key-here"

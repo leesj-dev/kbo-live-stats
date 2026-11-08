@@ -280,7 +280,7 @@ export async function fetchWinProbabilities(
   const rows: WinProbRow[] = [];
 
   let games = (await listGames(fromYmd, toYmd)).filter(
-    (g) => isTrackedKboGame(g.roundCode) && !g.cancel && g.statusCode === "RESULT" && g.gameDate >= fromDash && g.gameDate <= toDash,
+    (g) => isTrackedKboGame(g.roundCode) && !g.cancel && (g.statusCode === "RESULT" || g.statusCode === "ENDED") && g.gameDate >= fromDash && g.gameDate <= toDash,
   );
 
   if (opts.excludeGameIds) {
